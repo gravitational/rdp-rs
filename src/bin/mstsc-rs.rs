@@ -12,10 +12,16 @@ use clap::{App, Arg, ArgMatches};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use libc::{fd_set, select, FD_SET};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
-use rdp::core::client::{Connector, RdpClient};
 use rdp::core::event::{BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, RdpEvent};
 use rdp::core::gcc::KeyboardLayout;
+use rdp::core::global;
+use rdp::core::mcs;
+use rdp::core::sec;
+use rdp::core::tpkt;
+use rdp::core::x224;
 use rdp::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use rdp::model::link::{Link, Stream};
+use rdp::nla::ntlm::Ntlm;
 use std::convert::TryFrom;
 use std::io::{Read, Write};
 use std::mem;
@@ -301,9 +307,9 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
                 &format!("Cannot parse the input height argument [{}]", e),
             ))
         })?;
-    let domain = args.value_of("domain").unwrap_or_default();
-    let username = args.value_of("username").unwrap_or_default();
-    let password = args.value_of("password").unwrap_or_default();
+    let domain = args.value_of("domain").unwrap_or_default().to_string();
+    let username = args.value_of("username").unwrap_or_default().to_string();
+    let password = args.value_of("password").unwrap_or_default().to_string();
     let name = args.value_of("name").unwrap_or_default();
     let ntlm_hash = args.value_of("hash");
     let restricted_admin_mode = args.is_present("admin");
@@ -313,31 +319,124 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
     let check_certificate = args.is_present("check_certificate");
     let use_nla = !args.is_present("disable_nla");
 
-    let mut rdp_connector = Connector::new()
-        .screen(width, height)
-        .credentials(
-            domain.to_string(),
-            username.to_string(),
-            password.to_string(),
-        )
-        .set_restricted_admin_mode(restricted_admin_mode)
-        .auto_logon(auto_logon)
-        .blank_creds(blank_creds)
-        .layout(layout)
-        .check_certificate(check_certificate)
-        .name(name.to_string())
-        .use_nla(use_nla);
+    // Create a wrapper around the stream
+    let tcp = Link::new(Stream::Raw(stream));
 
-    if let Some(hash) = ntlm_hash {
-        rdp_connector = rdp_connector.set_password_hash(hex::decode(hash).map_err(|e| {
+    // Compute authentication method
+    let mut authentication = if let Some(hash) = ntlm_hash {
+        let password_hash = hex::decode(hash).map_err(|e| {
             Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
                 &format!("Cannot parse the input hash [{}]", e),
             ))
-        })?)
+        })?;
+        Ntlm::from_hash(domain.clone(), username.clone(), &password_hash)
+    } else {
+        Ntlm::new(domain.clone(), username.clone(), password.clone())
+    };
+    // Create the x224 layer
+    // With all negotiated security stuff and credentials
+    let mut protocols = x224::Protocols::ProtocolSSL as u32;
+    if use_nla {
+        protocols |= x224::Protocols::ProtocolHybrid as u32
     }
-    // RDP connection
-    Ok(rdp_connector.connect(stream)?)
+
+    let x224 = x224::Client::connect(
+        tpkt::Client::new(tcp),
+        protocols,
+        check_certificate,
+        Some(&mut authentication),
+        restricted_admin_mode,
+        blank_creds,
+    )?;
+
+    // Create MCS layer and connect it
+    let mut mcs = mcs::Client::new(x224);
+    mcs.connect(
+        name.to_string(),
+        width,
+        height,
+        layout,
+        vec!["RDPDR".to_string()],
+    )?;
+    // state less connection for old secure layer
+    if restricted_admin_mode {
+        sec::connect(
+            &mut mcs,
+            &"".to_string(),
+            &"".to_string(),
+            &"".to_string(),
+            auto_logon,
+        )?;
+    } else {
+        sec::connect(&mut mcs, &domain, &username, &password, auto_logon)?;
+    }
+
+    // Now the global channel
+    let global = global::Client::new(
+        mcs.get_user_id(),
+        mcs.get_global_channel_id(),
+        width,
+        height,
+        layout,
+        &name,
+    );
+
+    Ok(RdpClient { mcs, global })
+}
+
+struct RdpClient<S> {
+    /// Multi channel
+    /// This is the main switch layer of the protocol
+    mcs: mcs::Client<S>,
+    /// Global channel that implement the basic layer
+    global: global::Client,
+}
+
+impl<S: Read + Write> RdpClient<S> {
+    fn read<T>(&mut self, callback: T) -> RdpResult<()>
+    where
+        T: FnMut(RdpEvent),
+    {
+        let (channel_name, message) = self.mcs.read()?;
+        match channel_name.as_str() {
+            "global" => self.global.read(message, &mut self.mcs, callback),
+            _ => Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                &format!("Invalid channel name {:?}", channel_name),
+            ))),
+        }
+    }
+    fn write(&mut self, event: RdpEvent) -> RdpResult<()> {
+        match event {
+            // Pointer event
+            // Mouse position an d button position
+            RdpEvent::Pointer(pointer) => {
+                self.global.write_input_event(pointer.into(), &mut self.mcs)
+            }
+            // Raw keyboard input
+            RdpEvent::Key(key) => self.global.write_input_event(key.into(), &mut self.mcs),
+            _ => Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                "RDPCLIENT: This event can't be sent",
+            ))),
+        }
+    }
+
+    fn try_write(&mut self, event: RdpEvent) -> RdpResult<()> {
+        let result = self.write(event);
+        match result {
+            Err(Error::RdpError(e)) => match e.kind() {
+                RdpErrorKind::InvalidAutomata => Ok(()),
+                _ => Err(Error::RdpError(e)),
+            },
+            _ => result,
+        }
+    }
+
+    fn shutdown(&mut self) -> RdpResult<()> {
+        self.mcs.shutdown()
+    }
 }
 
 /// This function is in charge of the
