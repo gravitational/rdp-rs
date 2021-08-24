@@ -276,9 +276,14 @@ pub fn server_security_data() -> Component {
 }
 
 /// Actually we have no more classic channel
-pub fn channel_def(name: &String, options: u32) -> Component {
+pub fn channel_def(name: &str, options: u32) -> Component {
+    // Channel name is exactly 8 null-terminated ANSI characters.
+    let mut name = name;
+    if name.len() > 8 {
+        name = &name[..8];
+    }
     component![
-        "name"=> name.as_bytes().to_vec(),
+        "name"=> format!("{:\x00<8}",name).into_bytes(),
         "options" => U32::LE(options)
     ]
 }

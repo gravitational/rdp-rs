@@ -1,5 +1,5 @@
 use core::gcc::{
-    block_header, client_core_data, client_network_data, client_security_data,
+    block_header, channel_def, client_core_data, client_network_data, client_security_data,
     read_conference_create_response, write_conference_create_request, ClientData, KeyboardLayout,
     MessageType, ServerData, Version,
 };
@@ -226,6 +226,7 @@ impl<S: Read + Write> Client<S> {
         screen_height: u16,
         keyboard_layout: KeyboardLayout,
         client_name: String,
+        static_channels: &[String],
     ) -> RdpResult<()> {
         let client_core_data = client_core_data(Some(ClientData {
             width: screen_width,
@@ -236,7 +237,11 @@ impl<S: Read + Write> Client<S> {
             name: client_name,
         }));
         let client_security_data = client_security_data();
-        let client_network_data = client_network_data(trame![]);
+        let mut channel_defs = Trame::new();
+        for channel_name in static_channels {
+            channel_defs.push(Box::new(channel_def(&channel_name, 0)));
+        }
+        let client_network_data = client_network_data(channel_defs);
         let user_data = to_vec(&trame![
             trame![
                 block_header(
@@ -265,7 +270,7 @@ impl<S: Read + Write> Client<S> {
     }
 
     /// Read a connect response comming from server to client
-    fn read_connect_response(&mut self) -> RdpResult<()> {
+    fn read_connect_response(&mut self, static_channels: &[String]) -> RdpResult<()> {
         // Now read response from the server
         let mut connect_response = connect_response(None);
         let mut payload = try_let!(tpkt::Payload::Raw, self.x224.read()?)?;
@@ -274,9 +279,21 @@ impl<S: Read + Write> Client<S> {
         // Get server data
         // Read conference create response
         let cc_response = cast!(ASN1Type::OctetString, connect_response.inner["userData"])?;
-        self.server_data = Some(read_conference_create_response(&mut Cursor::new(
-            cc_response,
-        ))?);
+        let server_data = read_conference_create_response(&mut Cursor::new(cc_response))?;
+
+        // Extract channel IDs from the response.
+        // The order of static_channels should match the order of IDs in server_data.channel_ids.
+        let mut channel_names = static_channels.iter();
+        for channel_id in server_data.channel_ids.iter() {
+            let name = channel_names.next().ok_or_else(|| {
+                Error::RdpError(RdpError::new(
+                    RdpErrorKind::InvalidRespond,
+                    "got more channel IDs in server response than expected",
+                ))
+            })?;
+            self.channel_ids.insert(name.to_string(), *channel_id);
+        }
+        self.server_data = Some(server_data);
         Ok(())
     }
 
@@ -295,9 +312,16 @@ impl<S: Read + Write> Client<S> {
         screen_width: u16,
         screen_height: u16,
         keyboard_layout: KeyboardLayout,
+        static_channels: &[String],
     ) -> RdpResult<()> {
-        self.write_connect_initial(screen_width, screen_height, keyboard_layout, client_name)?;
-        self.read_connect_response()?;
+        self.write_connect_initial(
+            screen_width,
+            screen_height,
+            keyboard_layout,
+            client_name,
+            &static_channels,
+        )?;
+        self.read_connect_response(&static_channels)?;
         self.x224.write(erect_domain_request()?)?;
         self.x224.write(attach_user_request())?;
 

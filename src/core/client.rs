@@ -1,7 +1,6 @@
-use core::event::{PointerButton, RdpEvent};
+use core::event::RdpEvent;
 use core::gcc::KeyboardLayout;
 use core::global;
-use core::global::{ts_keyboard_event, ts_pointer_event, KeyboardFlag, PointerFlag};
 use core::mcs;
 use core::sec;
 use core::tpkt;
@@ -97,36 +96,10 @@ impl<S: Read + Write> RdpClient<S> {
             // Pointer event
             // Mouse position an d button position
             RdpEvent::Pointer(pointer) => {
-                // Pointer are sent to global channel
-                // Compute flags
-                let mut flags: u16 = 0;
-                match pointer.button {
-                    PointerButton::Left => flags |= PointerFlag::PtrflagsButton1 as u16,
-                    PointerButton::Right => flags |= PointerFlag::PtrflagsButton2 as u16,
-                    PointerButton::Middle => flags |= PointerFlag::PtrflagsButton3 as u16,
-                    _ => flags |= PointerFlag::PtrflagsMove as u16,
-                }
-
-                if pointer.down {
-                    flags |= PointerFlag::PtrflagsDown as u16;
-                }
-
-                self.global.write_input_event(
-                    ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)),
-                    &mut self.mcs,
-                )
+                self.global.write_input_event(pointer.into(), &mut self.mcs)
             }
             // Raw keyboard input
-            RdpEvent::Key(key) => {
-                let mut flags: u16 = 0;
-                if !key.down {
-                    flags |= KeyboardFlag::KbdflagsRelease as u16;
-                }
-                self.global.write_input_event(
-                    ts_keyboard_event(Some(flags), Some(key.code)),
-                    &mut self.mcs,
-                )
-            }
+            RdpEvent::Key(key) => self.global.write_input_event(key.into(), &mut self.mcs),
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::UnexpectedType,
                 "RDPCLIENT: This event can't be sent",
@@ -264,7 +237,13 @@ impl Connector {
 
         // Create MCS layer and connect it
         let mut mcs = mcs::Client::new(x224);
-        mcs.connect(self.name.clone(), self.width, self.height, self.layout)?;
+        mcs.connect(
+            self.name.clone(),
+            self.width,
+            self.height,
+            self.layout,
+            &vec![],
+        )?;
         // state less connection for old secure layer
         if self.restricted_admin_mode {
             sec::connect(
