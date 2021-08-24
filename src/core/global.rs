@@ -1,6 +1,6 @@
 use core::capability;
 use core::capability::{capability_set, Capability};
-use core::event::{BitmapEvent, RdpEvent};
+use core::event::{BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, RdpEvent};
 use core::gcc::KeyboardLayout;
 use core::mcs;
 use core::tpkt;
@@ -371,6 +371,36 @@ pub fn ts_pointer_event(flags: Option<u16>, x: Option<u16>, y: Option<u16>) -> T
             "xPos" => U16::LE(x.unwrap_or(0)),
             "yPos" => U16::LE(y.unwrap_or(0))
         ],
+    }
+}
+
+impl From<PointerEvent> for TSInputEvent {
+    fn from(pointer: PointerEvent) -> Self {
+        // Pointer are sent to global channel
+        // Compute flags
+        let mut flags: u16 = 0;
+        match pointer.button {
+            PointerButton::Left => flags |= PointerFlag::PtrflagsButton1 as u16,
+            PointerButton::Right => flags |= PointerFlag::PtrflagsButton2 as u16,
+            PointerButton::Middle => flags |= PointerFlag::PtrflagsButton3 as u16,
+            _ => flags |= PointerFlag::PtrflagsMove as u16,
+        }
+
+        if pointer.down {
+            flags |= PointerFlag::PtrflagsDown as u16;
+        }
+
+        ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y))
+    }
+}
+
+impl From<KeyboardEvent> for TSInputEvent {
+    fn from(key: KeyboardEvent) -> Self {
+        let mut flags: u16 = 0;
+        if !key.down {
+            flags |= KeyboardFlag::KbdflagsRelease as u16;
+        }
+        ts_keyboard_event(Some(flags), Some(key.code))
     }
 }
 
