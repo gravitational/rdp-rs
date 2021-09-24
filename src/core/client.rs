@@ -252,6 +252,7 @@ impl Connector {
                 &"".to_string(),
                 &"".to_string(),
                 self.auto_logon,
+                None,
             )?;
         } else {
             sec::connect(
@@ -260,6 +261,7 @@ impl Connector {
                 &self.username,
                 &self.password,
                 self.auto_logon,
+                None,
             )?;
         }
 

@@ -31,7 +31,7 @@ enum SecurityFlag {
 /// RDP option someone links to capabilities
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/732394f5-e2b5-4ac5-8a0a-35345386b0d1?redirectedfrom=MSDN
 #[allow(dead_code)]
-enum InfoFlag {
+pub enum InfoFlag {
     InfoMouse = 0x00000001,
     InfoDisablectrlaltdel = 0x00000002,
     InfoAutologon = 0x00000008,
@@ -83,6 +83,7 @@ fn rdp_infos(
     username: &String,
     password: &String,
     auto_logon: bool,
+    info_flags: Option<u32>,
 ) -> Component {
     let mut domain_format = domain.to_unicode();
     domain_format.push(0);
@@ -99,6 +100,7 @@ fn rdp_infos(
     component![
         "codePage" => U32::LE(0),
         "flag" => U32::LE(
+            info_flags.unwrap_or(0) |
             InfoFlag::InfoMouse as u32 |
             InfoFlag::InfoUnicode as u32 |
             InfoFlag::InfoLogonnotify as u32 |
@@ -147,6 +149,7 @@ pub fn connect<T: Read + Write>(
     username: &String,
     password: &String,
     auto_logon: bool,
+    info_flags: Option<u32>,
 ) -> RdpResult<()> {
     mcs.write(
         &"global".to_string(),
@@ -158,7 +161,8 @@ pub fn connect<T: Read + Write>(
                 domain,
                 username,
                 password,
-                auto_logon
+                auto_logon,
+                info_flags,
             )
         ],
     )?;
