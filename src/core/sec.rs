@@ -30,7 +30,6 @@ enum SecurityFlag {
 
 /// RDP option someone links to capabilities
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/732394f5-e2b5-4ac5-8a0a-35345386b0d1?redirectedfrom=MSDN
-#[allow(dead_code)]
 pub enum InfoFlag {
     InfoMouse = 0x00000001,
     InfoDisablectrlaltdel = 0x00000002,
