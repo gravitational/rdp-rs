@@ -130,6 +130,17 @@ pub enum PointerButton {
     Middle = 3,
 }
 
+#[repr(u8)]
+#[derive(Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
+pub enum PointerWheel {
+    /// No wheel scroll.
+    None = 0,
+    /// Vertical wheel scroll.
+    Vertical = 1,
+    /// Horizontal wheel scroll.
+    Horizontal = 2,
+}
+
 /// A mouse pointer event
 pub struct PointerEvent {
     /// horizontal position from top left angle of the window
@@ -140,6 +151,10 @@ pub struct PointerEvent {
     pub button: PointerButton,
     /// true if it's a down press action
     pub down: bool,
+    /// Which direction the wheel was scrolled.
+    pub wheel: PointerWheel,
+    /// How much was the wheel scrolled.
+    pub wheel_delta: i16,
 }
 
 /// Keyboard event
