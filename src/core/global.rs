@@ -875,6 +875,7 @@ impl Client {
                         capability::InputFlags::InputFlagScancodes as u16
                             | capability::InputFlags::InputFlagMousex as u16
                             | capability::InputFlags::InputFlagUnicode as u16
+                            | capability::InputFlags::TsInputFlagMouseHwheel as u16
                     ),
                     Some(self.layout)
                 ))),
