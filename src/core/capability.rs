@@ -362,13 +362,13 @@ pub enum InputFlags {
     InputFlagFastpathInput = 0x0008,
     /// In order to send keyboard scancode
     /// We can send directly UNICODE code of char
-    /// Usefull if we want to send script
+    /// Useful if we want to send script
     /// This feature is supported by rdp-rs
     InputFlagUnicode = 0x0010,
     InputFlagFastpathInput2 = 0x0020,
     InputFlagUnused1 = 0x0040,
     InputFlagUnused2 = 0x0080,
-    /// Support of the mouse wheel
+    /// Support for horizontal mouse wheel events
     /// This feature is supported by rdp-rs
     TsInputFlagMouseHwheel = 0x0100,
 }
