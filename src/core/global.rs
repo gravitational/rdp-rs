@@ -424,6 +424,10 @@ impl From<KeyboardEvent> for TSInputEvent {
         if !key.down {
             flags |= KeyboardFlag::KbdflagsRelease as u16;
         }
+        // Extended scancodes start with 0xe... (0b111...), such as 0xe05c (right Windows key)
+        if key.code & 0xE000 == 0xE000 {
+            flags |= KeyboardFlag::KbdflagsExtended as u16;
+        }
         ts_keyboard_event(Some(flags), Some(key.code))
     }
 }
