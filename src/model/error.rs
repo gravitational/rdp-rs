@@ -3,6 +3,7 @@ extern crate native_tls;
 use self::native_tls::Error as SslError;
 use self::native_tls::HandshakeError;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
+use std::fmt;
 use std::io::Error as IoError;
 use std::io::{Read, Write};
 use std::string::String;
@@ -49,6 +50,66 @@ pub enum RdpErrorKind {
     /// Indicate an unknown field
     Unknown,
     UnexpectedType,
+}
+
+/// ProtocolNegFailureCode defines the failure codes
+/// for the RDP Negotiation Failure message (2.2.1.2.2).
+/// It is sent by the server to inform the client of a failure
+/// that has occurred while preparing security for the connection.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ProtocolNegFailureCode {
+    Unknown(u32),
+    SslRequiredByServer,
+    SslNotAllowedByServer,
+    SslCertNotOnServer,
+    InconsistentFlags,
+    HybridRequiredByServer,
+    SslWithUserAuthRequiredByServer,
+}
+
+impl ProtocolNegFailureCode {
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            1 => ProtocolNegFailureCode::SslRequiredByServer,
+            2 => ProtocolNegFailureCode::SslNotAllowedByServer,
+            3 => ProtocolNegFailureCode::SslCertNotOnServer,
+            4 => ProtocolNegFailureCode::InconsistentFlags,
+            5 => ProtocolNegFailureCode::HybridRequiredByServer,
+            6 => ProtocolNegFailureCode::SslWithUserAuthRequiredByServer,
+            code => ProtocolNegFailureCode::Unknown(code),
+        }
+    }
+}
+
+impl fmt::Display for ProtocolNegFailureCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ProtocolNegFailureCode::SslRequiredByServer =>
+                    "the server requires that the client support enhanced RDP Security with TLS or CredSSP"
+                        .into(),
+                ProtocolNegFailureCode::SslNotAllowedByServer =>
+                    "the server is configured to only use standard RDP security mechanisms and does not support external security protocols"
+                        .into(),
+                ProtocolNegFailureCode::SslCertNotOnServer =>
+                    "the server does not possess a valid authentication certificate and cannot initialize the external security protocol provider"
+                        .into(),
+                ProtocolNegFailureCode::InconsistentFlags =>
+                    "the list of requested security protocols is not consistent with the current security protocol in effect"
+                        .into(),
+                ProtocolNegFailureCode::HybridRequiredByServer =>
+                    "the server requires that the client support enhanced RDP security with CredSSP"
+                        .into(),
+                ProtocolNegFailureCode::SslWithUserAuthRequiredByServer =>
+                    "the server requires that the client support enhanced RDP security with TLS and certificate-based client authentication"
+                        .into(),
+                ProtocolNegFailureCode::Unknown(code) =>
+                    format!("unknown negotiation failure {}", code),
+            }
+        )
+    }
 }
 
 #[derive(Debug)]

@@ -7,6 +7,8 @@ use std::convert::TryFrom;
 use std::io::{Read, Write};
 use std::option::Option;
 
+use crate::model::error::ProtocolNegFailureCode;
+
 #[repr(u8)]
 #[derive(Copy, Clone, TryFromPrimitive)]
 pub enum NegotiationType {
@@ -269,7 +271,11 @@ impl<S: Read + Write> Client<S> {
         match NegotiationType::try_from(cast!(DataType::U8, nego["type"])?)? {
             NegotiationType::TypeRDPNegFailure => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::ProtocolNegFailure,
-                "Error during negotiation step",
+                format!(
+                    "Error during negotiation step: {}",
+                    ProtocolNegFailureCode::from_code(cast!(DataType::U32, nego["result"])?)
+                )
+                .as_str(),
             ))),
             NegotiationType::TypeRDPNegReq => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidAutomata,
