@@ -235,6 +235,7 @@ impl<S: Read + Write> Client<S> {
             server_selected_protocol: self.x224.get_selected_protocols() as u32,
             rdp_version: Version::RdpVersion5plus,
             name: client_name,
+            connection_type: None,
         }));
         let client_security_data = client_security_data();
         let mut channel_defs = Trame::new();
