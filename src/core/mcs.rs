@@ -226,7 +226,7 @@ impl<S: Read + Write> Client<S> {
         screen_height: u16,
         keyboard_layout: KeyboardLayout,
         client_name: String,
-        static_channels: &[String],
+        static_channels: &[&str],
     ) -> RdpResult<()> {
         let client_core_data = client_core_data(Some(ClientData {
             width: screen_width,
@@ -271,7 +271,7 @@ impl<S: Read + Write> Client<S> {
     }
 
     /// Read a connect response comming from server to client
-    fn read_connect_response(&mut self, static_channels: &[String]) -> RdpResult<()> {
+    fn read_connect_response(&mut self, static_channels: &[&str]) -> RdpResult<()> {
         // Now read response from the server
         let mut connect_response = connect_response(None);
         let mut payload = try_let!(tpkt::Payload::Raw, self.x224.read()?)?;
@@ -313,14 +313,14 @@ impl<S: Read + Write> Client<S> {
         screen_width: u16,
         screen_height: u16,
         keyboard_layout: KeyboardLayout,
-        static_channels: &[String],
+        static_channels: &[&str],
     ) -> RdpResult<()> {
         self.write_connect_initial(
             screen_width,
             screen_height,
             keyboard_layout,
             client_name,
-            &static_channels,
+            static_channels,
         )?;
         self.read_connect_response(&static_channels)?;
         self.x224.write(erect_domain_request()?)?;
