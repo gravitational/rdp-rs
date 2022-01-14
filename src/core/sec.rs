@@ -115,8 +115,6 @@ fn rdp_infos(
             InfoFlag::InfoMouse as u32 |
             InfoFlag::InfoMouseHasWheel as u32 |
             InfoFlag::InfoUnicode as u32 |
-            InfoFlag::InfoLogonnotify as u32 |
-            InfoFlag::InfoLogonerrors as u32 |
             InfoFlag::InfoDisablectrlaltdel as u32 |
             InfoFlag::InfoEnablewindowskey as u32 |
             if auto_logon { InfoFlag::InfoAutologon as u32 } else { 0 }
