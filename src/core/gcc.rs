@@ -127,6 +127,19 @@ enum CapabilityFlag {
     RnsUdCsSupportHeartbeatPDU = 0x0400,
 }
 
+#[repr(u8)]
+#[derive(Clone)]
+#[allow(dead_code)]
+pub enum ConnectionType {
+    Modem = 0x01,         // 56Kbps
+    BroadbandLow = 0x02,  // 256Kbps - 2Mbps
+    Satellite = 0x03,     // 2Mbps - 16Mbps (high latency)
+    BroadbandHigh = 0x04, // 2 - 10Mbps
+    WAN = 0x05,           // 10Mpbs+ (high latency)
+    LAN = 0x06,           // 10 Mbps+
+    AutoDetect = 0x07,
+}
+
 /// Supported encryption method
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/6b58e11e-a32b-4903-b736-339f3cfe46ec?redirectedfrom=MSDN
 #[repr(u32)]
@@ -182,7 +195,6 @@ impl From<u16> for MessageType {
 }
 
 /// In case of client
-/// This is all mandatory fields need by client core data
 #[derive(Clone)]
 pub struct ClientData {
     pub width: u16,
@@ -191,6 +203,8 @@ pub struct ClientData {
     pub server_selected_protocol: u32,
     pub rdp_version: Version,
     pub name: String,
+
+    pub connection_type: Option<ConnectionType>,
 }
 
 /// This is the first client specific data
@@ -206,6 +220,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         server_selected_protocol: 0,
         rdp_version: Version::RdpVersion5plus,
         name: "".to_string(),
+        connection_type: None,
     });
 
     let client_name = if client_parameter.name.len() >= 16 {
@@ -213,6 +228,12 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
     } else {
         client_parameter.name.clone() + &"\x00".repeat(16 - client_parameter.name.len())
     };
+
+    let mut capability_flags = CapabilityFlag::RnsUdCsSupportErrinfoPDU as u16;
+    if let Some(_) = client_parameter.connection_type {
+        // indicate that we're specifying the connection type
+        capability_flags |= CapabilityFlag::RnsUdCsValidConnectionType as u16;
+    }
 
     component![
         "version" => U32::LE(client_parameter.rdp_version as u32),
@@ -237,9 +258,9 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
             //Support::RnsUd24BPPSupport as u16 |
             Support::RnsUd32BPPSupport as u16
             ),
-        "earlyCapabilityFlags" => U16::LE(CapabilityFlag::RnsUdCsSupportErrinfoPDU as u16),
+        "earlyCapabilityFlags" => U16::LE(capability_flags),
         "clientDigProductId" => vec![0; 64],
-        "connectionType" => 0 as u8,
+        "connectionType" => client_parameter.connection_type.map(|c|c as u8).unwrap_or(0),
         "pad1octet" => 0 as u8,
         "serverSelectedProtocol" => U32::LE(client_parameter.server_selected_protocol)
     ]

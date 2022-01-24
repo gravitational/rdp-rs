@@ -52,6 +52,18 @@ pub enum InfoFlag {
     InfoCompressionTypeMask = 0x00001E00,
 }
 
+/// Optional performance flags as specified in
+/// 2.2.1.11.1.1.1 (TS_EXTENDED_INFO_PACKET)
+pub enum ExtendedInfoFlag {
+    PerfDisableWallpaper = 0x00000001,
+    PerfDisableFullWindowDrag = 0x00000002,
+    PerfDisableMenuAnimations = 0x00000004,
+    PerfDisableTheming = 0x00000008,
+    PerfDisableCursorBlink = 0x00000040,
+    PerfEnableFontSmoothing = 0x00000080,
+    PerfEnableDesktopComposition = 0x00000100,
+}
+
 #[allow(dead_code)]
 enum AfInet {
     AfInet = 0x00002,
@@ -60,7 +72,7 @@ enum AfInet {
 
 /// On RDP version > 5
 /// Client have to send IP information
-fn rdp_extended_infos() -> Component {
+fn rdp_extended_infos(performance_flags: u32) -> Component {
     component![
         "clientAddressFamily" => U16::LE(AfInet::AfInet as u16),
         "cbClientAddress" => DynOption::new(U16::LE(0), |x| MessageOption::Size("clientAddress".to_string(), x.inner() as usize + 2)),
@@ -69,7 +81,7 @@ fn rdp_extended_infos() -> Component {
         "clientDir" => b"\x00\x00".to_vec(),
         "clientTimeZone" => vec![0; 172],
         "clientSessionId" => U32::LE(0),
-        "performanceFlags" => U32::LE(0)
+        "performanceFlags" => U32::LE(performance_flags)
     ]
 }
 
@@ -77,12 +89,12 @@ fn rdp_extended_infos() -> Component {
 /// interactive logon used credentials
 /// present in this payload
 fn rdp_infos(
-    is_extended_info: bool,
     domain: &String,
     username: &String,
     password: &String,
     auto_logon: bool,
     info_flags: Option<u32>,
+    extended_info_flags: Option<u32>,
 ) -> Component {
     let mut domain_format = domain.to_unicode();
     domain_format.push(0);
@@ -101,9 +113,8 @@ fn rdp_infos(
         "flag" => U32::LE(
             info_flags.unwrap_or(0) |
             InfoFlag::InfoMouse as u32 |
+            InfoFlag::InfoMouseHasWheel as u32 |
             InfoFlag::InfoUnicode as u32 |
-            InfoFlag::InfoLogonnotify as u32 |
-            InfoFlag::InfoLogonerrors as u32 |
             InfoFlag::InfoDisablectrlaltdel as u32 |
             InfoFlag::InfoEnablewindowskey as u32 |
             if auto_logon { InfoFlag::InfoAutologon as u32 } else { 0 }
@@ -118,7 +129,10 @@ fn rdp_infos(
         "password" => password_format,
         "alternateShell" => b"\x00\x00".to_vec(),
         "workingDir" => b"\x00\x00".to_vec(),
-        "extendedInfos" => if is_extended_info { rdp_extended_infos() } else { component![] }
+        "extendedInfos" => match extended_info_flags {
+            Some(f) => rdp_extended_infos(f),
+            None => component![]
+        }
     ]
 }
 
@@ -149,20 +163,19 @@ pub fn connect<T: Read + Write>(
     password: &String,
     auto_logon: bool,
     info_flags: Option<u32>,
+    extended_info_flags: Option<u32>,
 ) -> RdpResult<()> {
+    let perf_flags = if mcs.is_rdp_version_5_plus() {
+        extended_info_flags
+    } else {
+        None
+    };
     mcs.write(
         &"global".to_string(),
         trame![
             U16::LE(SecurityFlag::SecInfoPkt as u16),
             U16::LE(0),
-            rdp_infos(
-                mcs.is_rdp_version_5_plus(),
-                domain,
-                username,
-                password,
-                auto_logon,
-                info_flags,
-            )
+            rdp_infos(domain, username, password, auto_logon, info_flags, perf_flags)
         ],
     )?;
 
