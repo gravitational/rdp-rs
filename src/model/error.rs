@@ -113,6 +113,7 @@ impl fmt::Display for ProtocolNegFailureCode {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct RdpError {
     /// Kind of error
     kind: RdpErrorKind,
