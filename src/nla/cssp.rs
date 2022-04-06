@@ -90,7 +90,7 @@ pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
         "negoTokens" => ExplicitTag::new(Tag::context(1),
             sequence_of![
                 sequence![
-                    "negoToken" => ExplicitTag::new(Tag::context(0), nego as OctetString)
+                    "negoToken" => ExplicitTag::new(Tag::context(0), nego)
                 ]
             ]),
         "pubKeyAuth" => ExplicitTag::new(Tag::context(3), pub_key_auth as OctetString)
@@ -132,6 +132,63 @@ pub fn read_ts_validate(request: &[u8]) -> RdpResult<Vec<u8>> {
     Ok(pubkey.to_vec())
 }
 
+/// CredType describes the type of user credential.
+/// See section 2.2.1.2 of MS-CSSP:
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/94a1ab00-5500-42fd-8d3d-7a84e6c2cf03
+#[allow(dead_code)]
+enum CredType {
+    Password = 1,
+    SmartCard = 2,
+    RemoteGuard = 6,
+}
+
+/// Microsoft CSPs can contain two types of key-pairs.
+#[allow(dead_code)]
+enum KeySpec {
+    /// KeyExchange (AT_KEYEXCHNAGE) is the default. These
+    /// key-pairs can be used for signing and encryption.
+    KeyExchange = 1,
+    /// Signature (AT_SIGNATURE) is for key-pairs that can
+    /// only be used for signing.
+    Signature = 2,
+}
+
+fn create_ts_smart_card_credentials(domain: Vec<u8>, user: Vec<u8>, pin: Vec<u8>) -> Vec<u8> {
+    println!(
+        "Creating Smart Card creds for user {}",
+        String::from_utf8(user.clone()).unwrap_or(String::from("unknown"))
+    );
+    // MS-CSSP section 2.2.1.2.2
+    let ts_sc_creds = sequence![
+        "pin" => ExplicitTag::new(Tag::context(0), pin as OctetString),
+        "cspData" => ExplicitTag::new(Tag::context(1),
+            // TSCspDataDetail: see 2.2.1.2.2.1 of MS-CSSP
+            sequence![
+                "keySpec" => ExplicitTag::new(Tag::context(0), KeySpec::KeyExchange as Integer)
+                // optional:
+                // "cardName" => ExplicitTag::new(Tag::context(1), vec![] as OctetString),
+                // "readerName" => ExplicitTag::new(Tag::context(2), vec![] as OctetString),
+                // "containerName" => ExplicitTag::new(Tag::context(3), vec![] as OctetString),
+                // "cspName" => ExplicitTag::new(Tag::context(4), vec![] as OctetString)
+            ]
+        )
+        // optional:
+        // "userHint" => ExplicitTag::new(Tag::context(2), user as OctetString),
+        // "domainHint" => ExplicitTag::new(Tag::context(3), domain as OctetString)
+    ];
+
+    let ts_sc_cred_encoded = yasna::construct_der(|writer| {
+        ts_sc_creds.write_asn1(writer).unwrap();
+    });
+
+    let ts_credentials = sequence![
+        "credType" => ExplicitTag::new(Tag::context(0), CredType::SmartCard as Integer),
+        "credentials" => ExplicitTag::new(Tag::context(1), ts_sc_cred_encoded as OctetString)
+    ];
+
+    to_der(&ts_credentials)
+}
+
 fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> Vec<u8> {
     let ts_password_creds = sequence![
         "domainName" => ExplicitTag::new(Tag::context(0), domain as OctetString),
@@ -144,7 +201,7 @@ fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> V
     });
 
     let ts_credentials = sequence![
-        "credType" => ExplicitTag::new(Tag::context(0), 1 as Integer),
+        "credType" => ExplicitTag::new(Tag::context(0), CredType::Password as Integer),
         "credentials" => ExplicitTag::new(Tag::context(1), ts_password_cred_encoded as OctetString)
     ];
 
@@ -188,8 +245,9 @@ pub fn cssp_connect<S: Read + Write>(
     )?
     .to_der()?;
     let certificate = read_public_certificate(&certificate_der)?;
+    println!("peer certificate (DER): {:?}", certificate_der);
 
-    // Now we can send back our challenge payload wit the public key encoded
+    // Now we can send back our challenge payload with the public key encoded
     let challenge = create_ts_authenticate(
         client_challenge,
         security_interface.gss_wrapex(
@@ -202,8 +260,21 @@ pub fn cssp_connect<S: Read + Write>(
     );
     link.write(&challenge)?;
 
+    println!("responded to challenge !!!!");
+
     // now server respond normally with the original public key incremented by one
-    let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.read(0)?))?))?;
+    let request = match link.read(0) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("got error from read! {:?}", e);
+            return Err(e);
+        }
+    };
+    println!("got incremented key from server !!!!");
+    let data = read_ts_validate(&request)?;
+    println!("parsed incremented key !!!!");
+    let inc_pub_key = security_interface.gss_unwrapex(&data)?;
+    println!("validated incremented public key !!!!");
 
     // Check possible man in the middle using cssp
     if BigUint::from_bytes_le(&inc_pub_key)
@@ -220,6 +291,8 @@ pub fn cssp_connect<S: Read + Write>(
             "Man in the middle detected",
         )));
     }
+
+    println!("checked for mitm attack !!!!");
 
     // compute the last message with encoded credentials
 
@@ -239,8 +312,11 @@ pub fn cssp_connect<S: Read + Write>(
         authentication_protocol.get_password()
     };
 
+    println!("about to make smart card creds !!!!");
+
     let credentials = create_ts_authinfo(
-        security_interface.gss_wrapex(&create_ts_credentials(domain, user, password))?,
+        // security_interface.gss_wrapex(&create_ts_credentials(domain, user, password))?,
+        security_interface.gss_wrapex(&create_ts_smart_card_credentials(domain, user, password))?,
     );
     link.write(&credentials)?;
 

@@ -619,6 +619,11 @@ impl AuthenticationProtocol for Ntlm {
         let mut result = challenge_message();
         result.read(&mut stream)?;
 
+        println!(
+            "ntlm: read server challenge, negotiate flags={}",
+            cast!(DataType::U32, result["NegotiateFlags"])?
+        );
+
         let server_challenge = cast!(DataType::Slice, result["ServerChallenge"])?;
 
         let target_name = get_payload_field(
@@ -638,6 +643,8 @@ impl AuthenticationProtocol for Ntlm {
         } else {
             panic!("no timestamp available")
         };
+
+        println!("ntlm: generating client challenge");
 
         // generate client challenge
         let client_challenge = random(8);
@@ -668,6 +675,11 @@ impl AuthenticationProtocol for Ntlm {
 
         let domain = self.get_domain_name();
         let user = self.get_user_name();
+        println!(
+            "ntlm: user={:?}, domain={:?}",
+            String::from_utf8(user.clone()),
+            String::from_utf8(domain.clone())
+        );
 
         let auth_message_compute = authenticate_message(
             &lm_challenge_response,
@@ -707,6 +719,11 @@ impl AuthenticationProtocol for Ntlm {
         let server_signing_key = sign_key(self.exported_session_key.as_ref().unwrap(), false);
         let client_sealing_key = seal_key(self.exported_session_key.as_ref().unwrap(), true);
         let server_sealing_key = seal_key(self.exported_session_key.as_ref().unwrap(), false);
+
+        println!(
+            "building NTLM security interface Rc4 encryption key {:?}",
+            client_sealing_key
+        );
 
         Box::new(NTLMv2SecurityInterface::new(
             Rc4::new(&client_sealing_key),

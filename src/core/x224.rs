@@ -226,7 +226,9 @@ impl<S: Read + Write> Client<S> {
                 0
             }),
         )?;
-        match Self::read_connection_confirm(&mut tpkt)? {
+        let protos = Self::read_connection_confirm(&mut tpkt)?;
+        println!("x224 got protos !!!!!! {:?}", protos);
+        match protos {
             Protocols::ProtocolHybrid => Ok(Client::new(
                 tpkt.start_nla(
                     check_certificate,

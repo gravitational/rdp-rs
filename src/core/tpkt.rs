@@ -218,6 +218,7 @@ impl<S: Read + Write> Client<S> {
         authentication_protocol: &mut dyn AuthenticationProtocol,
         restricted_admin_mode: bool,
     ) -> RdpResult<Client<S>> {
+        println!("starting NLA !!!");
         let mut link = self.transport.start_ssl(check_certificate)?;
         cssp_connect(&mut link, authentication_protocol, restricted_admin_mode)?;
         Ok(Client::new(link))
