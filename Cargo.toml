@@ -26,7 +26,6 @@ integration = []
 mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
 
 [dependencies]
-native-tls = "^0.2"
 byteorder = "^1.3"
 bufstream = "0.1"
 indexmap = "^1.3"
@@ -38,6 +37,7 @@ rand = "^0.7"
 num-bigint = "^0.2"
 x509-parser = "0.6.5"
 num_enum = "0.4.3"
+rustls = { version = "0.20.4", features = ["dangerous_configuration"]}
 
 # for mtsc-rs
 hex = { version = "^0.4", optional = true }

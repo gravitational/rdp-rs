@@ -9,7 +9,6 @@ extern crate md4;
 extern crate md5;
 #[cfg(feature = "mstsc-rs")]
 extern crate minifb;
-extern crate native_tls;
 extern crate num_bigint;
 extern crate num_enum;
 extern crate rand;
