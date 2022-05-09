@@ -1,11 +1,9 @@
-extern crate native_tls;
+extern crate rustls;
 
-use self::native_tls::Error as SslError;
-use self::native_tls::HandshakeError;
+use self::rustls::Error as SslError;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use std::fmt;
 use std::io::Error as IoError;
-use std::io::{Read, Write};
 use std::string::String;
 use yasna::ASN1Error;
 
@@ -168,12 +166,6 @@ pub enum Error {
 impl From<IoError> for Error {
     fn from(e: IoError) -> Self {
         Error::Io(e)
-    }
-}
-
-impl<S: Read + Write> From<HandshakeError<S>> for Error {
-    fn from(_: HandshakeError<S>) -> Error {
-        Error::SslHandshakeError
     }
 }
 
