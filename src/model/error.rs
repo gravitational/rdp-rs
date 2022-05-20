@@ -198,6 +198,12 @@ impl<T: TryFromPrimitive> From<TryFromPrimitiveError<T>> for Error {
     }
 }
 
+impl From<std::num::TryFromIntError> for Error {
+    fn from(err: std::num::TryFromIntError) -> Self {
+        Error::TryError(err.to_string())
+    }
+}
+
 pub type RdpResult<T> = Result<T, Error>;
 
 /// Try options is waiting try trait for the next rust
