@@ -386,26 +386,27 @@ impl From<PointerEvent> for TSInputEvent {
             PointerButton::Middle => PointerFlag::PtrflagsButton3 as u16,
             _ => 0,
         };
-        // Clamp wheel delta to the allowed range.
-        let wheel_delta: i16 = if pointer.wheel_delta > 0x00FF {
-            0x00FF
-        } else if pointer.wheel_delta < -0x00FF {
-            -0x0FF
-        } else {
-            pointer.wheel_delta
-        };
-        let wheel_delta_flag = if wheel_delta > 0 {
-            wheel_delta as u16
-        } else if wheel_delta < 0 {
-            -wheel_delta as u16 | PointerFlag::PtrflagsWheelNegative as u16
-        } else {
-            0
-        };
+
         flags |= match pointer.wheel {
-            PointerWheel::Vertical => PointerFlag::PtrflagsWheel as u16 | wheel_delta_flag,
-            PointerWheel::Horizontal => PointerFlag::PtrflagsHwheel as u16 | wheel_delta_flag,
+            PointerWheel::Vertical => PointerFlag::PtrflagsWheel as u16,
+            PointerWheel::Horizontal => PointerFlag::PtrflagsHwheel as u16,
             _ => 0,
         };
+
+        // Clamp wheel delta to the allowed range.
+        let abs_wheel_delta = if pointer.wheel_delta.abs() > 0xFF {
+            0xFF
+        } else {
+            pointer.wheel_delta.abs() as u16
+        };
+
+        // If the wheel_delta is negative, take the 9-bit two's complement and add the appropriate flag.
+        flags |= if pointer.wheel_delta < 0 {
+            (0x100 - abs_wheel_delta) | PointerFlag::PtrflagsWheelNegative as u16
+        } else {
+            abs_wheel_delta
+        };
+
         if pointer.button == PointerButton::None && pointer.wheel == PointerWheel::None {
             flags |= PointerFlag::PtrflagsMove as u16;
         }
