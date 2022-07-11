@@ -25,19 +25,25 @@ required-features = ["mstsc-rs"]
 integration = []
 mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
 
+
 [dependencies]
 byteorder = "^1.3"
 bufstream = "0.1"
+gethostname = "0.2.3"
 indexmap = "^1.3"
 yasna = { version = "^0.3" }
 md4 = "^0.8"
 hmac = "^0.7"
 md-5 = "^0.8"
-rand = "^0.7"
 num-bigint = "^0.2"
-x509-parser = "0.6.5"
 num_enum = "0.4.3"
+oid-registry = "0.6.0"
+rand = "^0.7"
+rc4 = "0.1.0"
+ring = "0.16.20"
+rsa = "0.6.1"
 rustls = { version = "0.20.4", features = ["dangerous_configuration"]}
+x509-parser = "0.14.0"
 
 # for mtsc-rs
 hex = { version = "^0.4", optional = true }

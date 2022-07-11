@@ -4,7 +4,7 @@ use nla::asn1::{to_der, ASN1Type, ExplicitTag, Integer, OctetString, Sequence, S
 use nla::sspi::AuthenticationProtocol;
 use num_bigint::BigUint;
 use std::io::{Read, Write};
-use x509_parser::{parse_x509_der, X509Certificate};
+use x509_parser::{certificate::X509Certificate, prelude::FromDer};
 use yasna::Tag;
 
 /// Create a ts request as expected by the specification
@@ -100,7 +100,7 @@ pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
 }
 
 pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
-    let res = parse_x509_der(stream).unwrap();
+    let res = X509Certificate::from_der(stream).unwrap();
     Ok(res.1)
 }
 
@@ -193,7 +193,7 @@ pub fn cssp_connect<S: Read + Write>(
     let challenge = create_ts_authenticate(
         client_challenge,
         security_interface.gss_wrapex(
-            certificate
+            &certificate
                 .tbs_certificate
                 .subject_pki
                 .subject_public_key
@@ -208,7 +208,7 @@ pub fn cssp_connect<S: Read + Write>(
     // Check possible man in the middle using cssp
     if BigUint::from_bytes_le(&inc_pub_key)
         != BigUint::from_bytes_le(
-            certificate
+            &certificate
                 .tbs_certificate
                 .subject_pki
                 .subject_public_key

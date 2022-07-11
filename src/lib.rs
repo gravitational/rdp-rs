@@ -1,6 +1,7 @@
 extern crate byteorder;
 #[cfg(feature = "mstsc-rs")]
 extern crate clap;
+extern crate gethostname;
 #[cfg(feature = "mstsc-rs")]
 extern crate hex;
 extern crate hmac;
@@ -11,7 +12,11 @@ extern crate md5;
 extern crate minifb;
 extern crate num_bigint;
 extern crate num_enum;
+extern crate oid_registry;
 extern crate rand;
+extern crate rc4;
+extern crate ring;
+extern crate rsa;
 #[cfg(feature = "mstsc-rs")]
 extern crate winapi;
 extern crate x509_parser;

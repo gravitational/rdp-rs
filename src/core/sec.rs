@@ -1,8 +1,7 @@
 use core::license;
 use core::mcs;
-use core::tpkt;
-use model::data::{Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use model::data::{Component, DynOption, MessageOption, Trame, U16, U32};
+use model::error::RdpResult;
 use model::unicode::Unicode;
 use std::io::{Read, Write};
 
@@ -10,7 +9,7 @@ use std::io::{Read, Write};
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
 #[repr(u16)]
 #[allow(dead_code)]
-enum SecurityFlag {
+pub enum SecurityFlag {
     SecExchangePkt = 0x0001,
     SecTransportReq = 0x0002,
     RdpSecTransportRsp = 0x0004,
@@ -136,14 +135,6 @@ fn rdp_infos(
     ]
 }
 
-/// Details of the security header
-fn security_header() -> Component {
-    component![
-        "securityFlag" => U16::LE(0),
-        "securityFlagHi" => U16::LE(0)
-    ]
-}
-
 /// Security layer need mcs layer and send all message through
 /// the global channel
 ///
@@ -170,6 +161,7 @@ pub fn connect<T: Read + Write>(
     } else {
         None
     };
+    // Client Info PDU
     mcs.write(
         &"global".to_string(),
         trame![
@@ -179,17 +171,6 @@ pub fn connect<T: Read + Write>(
         ],
     )?;
 
-    let (_channel_name, payload) = mcs.read()?;
-    let mut stream = try_let!(tpkt::Payload::Raw, payload)?;
-    let mut header = security_header();
-    header.read(&mut stream)?;
-    if cast!(DataType::U16, header["securityFlag"])? & SecurityFlag::SecLicensePkt as u16 == 0 {
-        return Err(Error::RdpError(RdpError::new(
-            RdpErrorKind::InvalidData,
-            "SEC: Invalid Licence packet",
-        )));
-    }
-
-    license::client_connect(&mut stream)?;
+    license::client_connect(mcs, domain, username)?;
     Ok(())
 }
