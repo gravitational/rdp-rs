@@ -184,8 +184,8 @@ impl<S: Read + Write> Stream<S> {
     /// Only works when stream is a SSL stream
     pub fn shutdown(&mut self) -> RdpResult<()> {
         if let Stream::Ssl(stream) = self {
-                stream.conn.send_close_notify();
-                stream.flush()?;
+            stream.conn.send_close_notify();
+            stream.flush()?;
         }
         Ok(())
     }
