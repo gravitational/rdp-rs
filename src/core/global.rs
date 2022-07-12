@@ -504,6 +504,7 @@ impl FastPathUpdate {
             FastPathUpdateType::FastpathUpdatetypeColor => ts_colorpointerattribute(),
             FastPathUpdateType::FastpathUpdatetypeSynchronize => ts_fp_update_synchronize(),
             FastPathUpdateType::FastpathUpdatetypePtrNull => ts_fp_systempointerhiddenattribute(),
+            FastPathUpdateType::FastpathUpdatetypePtrDefault => ts_fp_ptrdefault(),
             _ => {
                 return Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::NotImplemented,
@@ -608,6 +609,16 @@ fn ts_fp_update_synchronize() -> FastPathUpdate {
 fn ts_fp_systempointerhiddenattribute() -> FastPathUpdate {
     FastPathUpdate {
         fp_type: FastPathUpdateType::FastpathUpdatetypePtrNull,
+        message: component![],
+    }
+}
+
+/// This update is used to set the shape of the pointer to the operating system default.
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/601801eb-ce9e-4073-803b-aea6deb1e457
+fn ts_fp_ptrdefault() -> FastPathUpdate {
+    FastPathUpdate {
+        fp_type: FastPathUpdateType::FastpathUpdatetypePtrDefault,
         message: component![],
     }
 }
@@ -836,6 +847,7 @@ impl Client {
                         // do nothing
                         FastPathUpdateType::FastpathUpdatetypeColor
                         | FastPathUpdateType::FastpathUpdatetypePtrNull
+                        | FastPathUpdateType::FastpathUpdatetypePtrDefault
                         | FastPathUpdateType::FastpathUpdatetypeSynchronize => (),
                         _ => println!("GLOBAL: Fast Path order not handled {:?}", order.fp_type),
                     }
