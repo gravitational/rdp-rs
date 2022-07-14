@@ -199,6 +199,86 @@ enum PDUType2 {
     Unknown,
 }
 
+/// The various error codes in the TS_SET_ERROR_INFO_PDU.
+///
+/// See: https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a21a1bd9-2303-49c1-90ec-3932435c248c
+#[repr(u32)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, TryFromPrimitive)]
+pub enum ServerError {
+    None = 0x00000000,
+    /// The disconnection was initiated by an administrative tool on
+    /// the server in another session.
+    RpcInitiatedDisconnect = 0x00000001,
+    /// The disconnection was due to a forced logoff initiated by an
+    /// adminitrative tool on the server in another session.
+    RpcInitiatedLogoff = 0x00000002,
+    /// The idle session limit timer on the server has elapsed.
+    IdleTimeout = 0x00000003,
+    /// The active session limit timer ont he server has elapsed.
+    LogonTimeout = 0x00000004,
+    /// Another user connected to the server, forcing the disconnection
+    /// of the current connection.
+    DisconnectedByOtherConnection = 0x00000005,
+    /// The server ran out of available memory resources.
+    OutOfMemory = 0x00000006,
+    /// The server denied the connection.
+    ServerDeniedConnection = 0x00000007,
+    /// The user cannot connect to the server due to insufficient
+    /// access privileges.
+    InsufficientPrivileges = 0x00000009,
+    /// The server does not accept saved user credentials and requires
+    /// that the user enter their credentials for each connection.
+    FreshCredentialsRequired = 0x0000000A,
+    /// The disconnection was initiated by an administrative tool on the
+    /// server running in the user's session.
+    RpcInitiatedDisconnectByUser = 0x0000000B,
+    /// The disconnection was initiated by the user logging off on the server.
+    LogoffByUser = 0x0000000C,
+    /// The display driver in the remote session did not report any status
+    /// within the time allotted for startup.
+    CloseStackOnDriverNotReady = 0x0000000F,
+    /// The DWM process running in the remote session terminated unexcpectedly.
+    ServerDwmCrash = 0x00000010,
+    /// The display driver in the remote session was unable to complete all the
+    /// tasks required for startup.
+    CloseStackOnDriverFailure = 0x00000011,
+    /// The display drdiver in the remote session started up successfully,
+    /// but due to internal failures was not usable by the remoting stack.
+    CloseStackOnDriverIfaceFailure = 0x00000012,
+    /// The Winlogon process running in the remote session terminated unexpectedly.
+    WinlogonCrash = 0x00000017,
+    /// The CSRSS process running in the remote session terminated unexpectedly.
+    CsrssCrash = 0x00000018,
+    /// The remote server is busy shutting down.
+    ServerShutdown = 0x00000019,
+    /// The remote server is busy rebooting.
+    ServerReboot = 0x0000001A,
+
+    /// An internal error has occurred in the Terminal Services licensing component.
+    LicenseInternal = 0x00000100,
+    /// A remote desktop license server could not be found to provide a license.
+    NoLicenseServer = 0x00000101,
+    /// There are no Client Access Licenses available for the target remote computer.
+    NoLicense = 0x00000102,
+    /// The remote computer received an invalid licensing message from the client.
+    LicenseBadClientMsg = 0x00000103,
+    /// The Client Access License stored by the client has been modified.
+    LicenseHWwidDoesntMatch = 0x00000104,
+    /// The client Access License stored by the client is in an invalid format.
+    BadClientLicense = 0x00000105,
+    /// Network problems have caused the licensing protocol to be terminated.
+    LicenseCantFinishProtocol = 0x00000106,
+    /// The client prematurely ended the licensing protocol.
+    LicenseClientEndedProtocol = 0x00000107,
+    /// A licensing message was incorrectly encrypted.
+    LicenseBadClientEncryption = 0x00000108,
+    /// The Client Access License stored by the client could not be upgraded
+    /// or renewed.
+    LicenseCantUpgrade = 0x00000109,
+    /// The remote computer is not licensed to accept remote connections.
+    LicenseNoRemoteConnections = 0x0000010A,
+}
+
 /// Data PDU container
 struct DataPDU {
     pdu_type: PDUType2,
@@ -665,6 +745,8 @@ pub struct Client {
     server_capabilities: Vec<Capability>,
     /// Name send to the server
     name: String,
+    /// Set if the server sends an error before terminating the connection.
+    pub server_error: Option<ServerError>,
 }
 
 impl Client {
@@ -703,6 +785,7 @@ impl Client {
             height,
             layout,
             name: String::from(name),
+            server_error: None,
         }
     }
 
@@ -804,10 +887,22 @@ impl Client {
 
             match DataPDU::from_pdu(&pdu) {
                 Ok(data_pdu) => match data_pdu.pdu_type {
-                    PDUType2::Pdutype2SetErrorInfoPdu => println!(
-                        "GLOBAL: Receive error PDU from server {:?}",
-                        cast!(DataType::U32, data_pdu.message["errorInfo"])?
-                    ),
+                    PDUType2::Pdutype2SetErrorInfoPdu => {
+                        match ServerError::try_from_primitive(cast!(
+                            DataType::U32,
+                            data_pdu.message["errorInfo"]
+                        )?) {
+                            Ok(server_error) => {
+                                self.server_error = Some(server_error);
+                            }
+                            _ => {
+                                println!(
+                                    "GLOBAL: Receive error PDU from server {:?}",
+                                    cast!(DataType::U32, data_pdu.message["errorInfo"])?
+                                );
+                            }
+                        }
+                    }
                     _ => println!("GLOBAL: Data PDU not handle {:?}", data_pdu.pdu_type),
                 },
                 Err(e) => println!("GLOBAL: Parsing data PDU error {:?}", e),
