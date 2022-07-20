@@ -807,7 +807,7 @@ impl<T: Message + Clone + PartialEq> Message for Check<T> {
 
 impl Message for Vec<u8> {
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
-        writer.write(self)?;
+        writer.write_all(self)?;
         Ok(())
     }
 

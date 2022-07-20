@@ -257,12 +257,6 @@ pub fn rle_16_decompress(
 
         while count > 0 {
             if x >= width {
-                if height <= 0 {
-                    return Err(Error::RdpError(RdpError::new(
-                        RdpErrorKind::InvalidData,
-                        "error during decompress",
-                    )));
-                }
                 x = 0;
                 height -= 1;
                 prevline = line;
