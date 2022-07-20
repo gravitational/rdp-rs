@@ -3,7 +3,7 @@ extern crate rustls;
 use model::data::Message;
 use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::convert::TryInto;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Write, self};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -257,6 +257,12 @@ impl<S: Read + Write> Link<S> {
         if expected_size == 0 {
             let mut buffer = vec![0; 1500];
             let size = self.stream.read(&mut buffer)?;
+            if size == 0 {
+                return Err(Error::Io(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "Unexpected EOF",
+                )));
+            }
             buffer.resize(size, 0);
             Ok(buffer)
         } else {
