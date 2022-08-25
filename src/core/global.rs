@@ -710,15 +710,16 @@ impl Client {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type == PDUType::PdutypeDemandactivepdu {
             for capability_set in cast!(DataType::Trame, pdu.message["capabilitySets"])?.iter() {
-                match Capability::from_capability_set(cast!(DataType::Component, capability_set)?) {
-                    Ok(capability) => self.server_capabilities.push(capability),
-                    Err(e) => println!("GLOBAL: {:?}", e),
+                if let Ok(capability) =
+                    Capability::from_capability_set(cast!(DataType::Component, capability_set)?)
+                {
+                    self.server_capabilities.push(capability)
                 }
             }
             self.share_id = Some(cast!(DataType::U32, pdu.message["shareId"])?);
             return Ok(true);
         }
-        return Ok(false);
+        Ok(false)
     }
 
     /// Read server synchronize pdu
