@@ -71,7 +71,7 @@ pub enum MessageType {
 /// Error code of the license automata
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f18b6c9f-f3d8-4a0e-8398-f9b153233dca?redirectedfrom=MSDN
 #[repr(u32)]
-#[derive(PartialEq, Eq, TryFromPrimitive)]
+#[derive(Debug, PartialEq, Eq, TryFromPrimitive)]
 pub enum ErrorCode {
     ErrInvalidServerCertificate = 0x00000001,
     ErrNoLicense = 0x00000002,
@@ -88,7 +88,7 @@ pub enum ErrorCode {
 /// for license automata
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f18b6c9f-f3d8-4a0e-8398-f9b153233dca
 #[repr(u32)]
-#[derive(PartialEq, Eq, TryFromPrimitive)]
+#[derive(Debug, PartialEq, Eq, TryFromPrimitive)]
 pub enum StateTransition {
     StTotalAbort = 0x00000001,
     StNoTransition = 0x00000002,
@@ -769,7 +769,7 @@ impl SessionEncryptionData {
 }
 
 /// Wraps license message with security and preamble headers
-fn license_response(message_type: MessageType, data: Vec<u8>) -> RdpResult<Vec<u8>> {
+fn license_message(message_type: MessageType, data: Vec<u8>) -> RdpResult<Vec<u8>> {
     let message = trame![
         U16::LE(SecurityFlag::SecLicensePkt as u16),
         U16::LE(0),
@@ -792,33 +792,49 @@ pub fn client_connect<T: Read + Write>(
     username: &str,
 ) -> RdpResult<()> {
     let (channel, payload) = mcs.read()?;
+    println!("[LIC] received message on channel {}", channel);
     let session_encryption_data = match LicenseMessage::new(payload)? {
         // When we get the `NewLicense` message at the start of the
         // license flow it means that we don't have to continue
         // so we can return
-        LicenseMessage::NewLicense(_) => return Ok(()),
+        LicenseMessage::NewLicense(_) => {
+            println!("[LIC] received new license from server!");
+            return Ok(());
+        }
         LicenseMessage::LicenseRequest(request) => {
+            println!("[LIC] received license request from server");
             let session_encryption_data = SessionEncryptionData::new(
                 random(CLIENT_RANDOM_SIZE),
                 request.server_random,
                 random(PREMASTER_RANDOM_SIZE),
                 request.certificate,
             );
-            let client_new_license_response = ClientNewLicense::new(
+            let client_new_license_request = ClientNewLicense::new(
                 &session_encryption_data,
                 CString::new(domain).unwrap_or_else(|_| CString::new(".").unwrap()),
                 CString::new(username).unwrap_or_else(|_| CString::new("default").unwrap()),
             )?;
+            println!(
+                "[LIC] requesting license for {:?}, {:?}",
+                client_new_license_request.domain, client_new_license_request.username
+            );
+
             mcs.write(
                 &channel,
-                license_response(
+                license_message(
                     MessageType::NewLicenseRequest,
-                    client_new_license_response.to_bytes()?,
+                    client_new_license_request.to_bytes()?,
                 )?,
             )?;
             session_encryption_data
         }
-        LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
+        LicenseMessage::ErrorAlert(error_alert) => {
+            println!(
+                "[LIC] received error from server code={:?} state={:?}",
+                error_alert.code, error_alert.state_transition
+            );
+            return error_alert.is_valid();
+        }
         _ => {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidRespond,
@@ -828,19 +844,27 @@ pub fn client_connect<T: Read + Write>(
     };
 
     let (channel, payload) = mcs.read()?;
+    println!("[LIC] received response on channel {}", channel);
     match LicenseMessage::new(payload)? {
         LicenseMessage::PlatformChallenge(platform_challenge) => {
             let platform_challenge_response =
                 ClientPlatformChallenge::new(platform_challenge, &session_encryption_data)?;
+            println!("[LIC] sending license challenge response to server");
             mcs.write(
                 &channel,
-                license_response(
+                license_message(
                     MessageType::PlatformChallengeResponse,
                     platform_challenge_response.to_bytes()?,
                 )?,
             )?;
         }
-        LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
+        LicenseMessage::ErrorAlert(error_alert) => {
+            println!(
+                "[LIC] received error from server code={:?} state={:?}",
+                error_alert.code, error_alert.state_transition
+            );
+            return error_alert.is_valid();
+        }
         _ => {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidRespond,
@@ -849,14 +873,22 @@ pub fn client_connect<T: Read + Write>(
         }
     }
 
-    let (_channel, payload) = mcs.read()?;
+    let (channel, payload) = mcs.read()?;
+    println!("[LIC] received final response on channel {}", channel);
     match LicenseMessage::new(payload)? {
         LicenseMessage::NewLicense(new_license) => {
             // At the moment we're not storing license client-side,
             // so we can just validate data and return
             let _license = License::new(&session_encryption_data, &new_license)?;
+            println!("[LIC] licensing exchange complete");
         }
-        LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
+        LicenseMessage::ErrorAlert(error_alert) => {
+            println!(
+                "[LIC] received error from server code={:?} state={:?}",
+                error_alert.code, error_alert.state_transition
+            );
+            return error_alert.is_valid();
+        }
         _ => {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidRespond,
