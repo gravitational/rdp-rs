@@ -6,6 +6,7 @@ use nla::sspi::AuthenticationProtocol;
 use std::io::{Cursor, Read, Write};
 
 /// TPKT must implement this two kind of payload
+#[derive(Debug)]
 pub enum Payload {
     Raw(Cursor<Vec<u8>>),
     FastPath(u8, Cursor<Vec<u8>>),
