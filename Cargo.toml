@@ -24,6 +24,7 @@ required-features = ["mstsc-rs"]
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
 mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
+fips = ["boring"]
 
 
 [dependencies]
@@ -44,6 +45,9 @@ ring = "0.16.20"
 rsa = "0.6.1"
 rustls = { version = "0.20.4", features = ["dangerous_configuration"]}
 x509-parser = "0.14.0"
+
+# fips
+boring = { version = "2.1.0", features = ["fips"], optional = true }
 
 # for mtsc-rs
 hex = { version = "^0.4", optional = true }

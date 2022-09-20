@@ -1,3 +1,5 @@
+#[cfg(feature = "fips")]
+extern crate boring;
 extern crate byteorder;
 #[cfg(feature = "mstsc-rs")]
 extern crate clap;
@@ -17,6 +19,8 @@ extern crate rand;
 extern crate rc4;
 extern crate ring;
 extern crate rsa;
+#[cfg(not(feature = "fips"))]
+extern crate rustls;
 #[cfg(feature = "mstsc-rs")]
 extern crate winapi;
 extern crate x509_parser;
