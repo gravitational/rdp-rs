@@ -1,6 +1,5 @@
 extern crate rustls;
 
-use self::rustls::Error as SslError;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use std::fmt;
 use std::io::Error as IoError;
@@ -155,23 +154,19 @@ pub enum Error {
     /// SSL handshake error
     SslHandshakeError,
     /// SSL error
-    SslError(SslError),
+    SslError,
     /// ASN1 parser error
     ASN1Error(ASN1Error),
     /// try error
     TryError(String),
+    // All kind of parse error
+    FromError(String),
 }
 
 /// From IO Error
 impl From<IoError> for Error {
     fn from(e: IoError) -> Self {
         Error::Io(e)
-    }
-}
-
-impl From<SslError> for Error {
-    fn from(e: SslError) -> Error {
-        Error::SslError(e)
     }
 }
 

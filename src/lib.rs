@@ -1,3 +1,5 @@
+#[cfg(feature = "fips")]
+extern crate boring;
 extern crate byteorder;
 #[cfg(feature = "mstsc-rs")]
 extern crate clap;

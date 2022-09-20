@@ -1,114 +1,8 @@
-extern crate rustls;
-
 use model::data::Message;
 use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use std::convert::TryInto;
 use std::io::{Cursor, Read, Write};
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use std::time::SystemTime;
 
-use self::rustls::{
-    client::{NoClientSessionStorage, ServerCertVerified, ServerCertVerifier},
-    Certificate, ClientConfig, ClientConnection, ConnectionCommon, Error as RustlsError,
-    RootCertStore, ServerName, SideData, Stream as RustlsStream,
-};
-
-/// Marks all server certificates as valid
-/// so it can be used to turn off the server certificate
-/// validation on the client-side.
-struct DummyTlsVerifier;
-
-impl ServerCertVerifier for DummyTlsVerifier {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &Certificate,
-        _intermediates: &[Certificate],
-        _server_name: &ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
-        _ocsp_response: &[u8],
-        _now: SystemTime,
-    ) -> Result<ServerCertVerified, RustlsError> {
-        Ok(ServerCertVerified::assertion())
-    }
-}
-
-/// Copied from rustls library with removed trait bounds (Read + Write)
-/// By removing trait bounds we don't have to update
-/// other structs that depends on the Stream enum
-pub struct StreamOwned<C: Sized, T: Sized> {
-    /// Our conneciton
-    pub conn: C,
-
-    /// The underlying transport, like a socket
-    pub sock: T,
-}
-
-impl<C, T, S> StreamOwned<C, T>
-where
-    C: DerefMut + Deref<Target = ConnectionCommon<S>>,
-    T: Read + Write,
-    S: SideData,
-{
-    /// Make a new StreamOwned taking the Connection `conn` and socket-like
-    /// object `sock`.  This does not fail and does no IO.
-    ///
-    /// This is the same as `Stream::new` except `conn` and `sock` are
-    /// moved into the StreamOwned.
-    pub fn new(conn: C, sock: T) -> Self {
-        Self { conn, sock }
-    }
-
-    /// Get a reference to the underlying socket
-    pub fn get_ref(&self) -> &T {
-        &self.sock
-    }
-
-    /// Get a mutable reference to the underlying socket
-    pub fn get_mut(&mut self) -> &mut T {
-        &mut self.sock
-    }
-
-    fn as_stream(&mut self) -> RustlsStream<C, T> {
-        RustlsStream {
-            conn: &mut self.conn,
-            sock: &mut self.sock,
-        }
-    }
-}
-
-impl<C, T, S> Read for StreamOwned<C, T>
-where
-    C: DerefMut + Deref<Target = ConnectionCommon<S>>,
-    T: Read + Write,
-    S: SideData,
-{
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.as_stream().read(buf)
-    }
-
-    #[cfg(read_buf)]
-    fn read_buf(&mut self, buf: &mut std::io::ReadBuf<'_>) -> std::io::Result<()> {
-        self.as_stream().read_buf(buf)
-    }
-}
-
-impl<C, T, S> Write for StreamOwned<C, T>
-where
-    C: DerefMut + Deref<Target = ConnectionCommon<S>>,
-    T: Read + Write,
-    S: SideData,
-{
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.as_stream().write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.as_stream().flush()
-    }
-}
-
-pub type TlsStream<S> = StreamOwned<ClientConnection, S>;
+use super::tls::{Certificate, TlsStream};
 
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
@@ -184,8 +78,7 @@ impl<S: Read + Write> Stream<S> {
     /// Only works when stream is a SSL stream
     pub fn shutdown(&mut self) -> RdpResult<()> {
         if let Stream::Ssl(stream) = self {
-            stream.conn.send_close_notify();
-            stream.flush()?;
+            stream.shutdown()?
         }
         Ok(())
     }
@@ -277,34 +170,11 @@ impl<S: Read + Write> Link<S> {
     /// let link_ssl = link_tcp.start_ssl(false).unwrap();
     /// ```
     pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
-        let root_store = RootCertStore::empty();
-        let mut config = ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-
-        if !check_certificate {
-            let mut config = config.dangerous();
-            let verifier = Arc::new(DummyTlsVerifier {});
-            config.set_certificate_verifier(verifier)
-        }
-
-        config.enable_sni = false;
-        // We do not use the Server Name Indication (SNI) extension
-        // during the client handshake, but the rustls library requires
-        // a valid DNS domain name for the server regardless of that
-        // setting, so we need to provide a valid name.
-        // We can't use an empty string here.
-        let server_name: ServerName = "servername".try_into().unwrap();
-        config.session_storage = Arc::new(NoClientSessionStorage {});
-
-        let arc = Arc::new(config);
-        let conn = ClientConnection::new(arc, server_name)?;
-
         if let Stream::Raw(stream) = self.stream {
-            let owned = TlsStream::new(conn, stream);
+            let owned = TlsStream::new(check_certificate, stream)?;
             return Ok(Link::new(Stream::Ssl(owned)));
         }
+
         Err(Error::RdpError(RdpError::new(
             RdpErrorKind::NotImplemented,
             "start_ssl on ssl stream is forbidden",
@@ -325,21 +195,7 @@ impl<S: Read + Write> Link<S> {
     /// ```
     pub fn get_peer_certificate(&self) -> RdpResult<Option<Certificate>> {
         if let Stream::Ssl(stream) = &self.stream {
-            if let Some(certs) = stream.conn.peer_certificates() {
-                if let Some(cert) = certs.first() {
-                    Ok(Some(cert.clone()))
-                } else {
-                    Err(Error::RdpError(RdpError::new(
-                        RdpErrorKind::InvalidData,
-                        "certificates chain is empty",
-                    )))
-                }
-            } else {
-                Err(Error::RdpError(RdpError::new(
-                    RdpErrorKind::InvalidData,
-                    "certificates chain is unavialable",
-                )))
-            }
+            Ok(stream.peer_certificate()?)
         } else {
             Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
