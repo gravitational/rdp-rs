@@ -227,14 +227,16 @@ impl<S: Read + Write> Client<S> {
             }),
         )?;
         match Self::read_connection_confirm(&mut tpkt)? {
-            Protocols::ProtocolHybrid => Ok(Client::new(
-                tpkt.start_nla(
-                    check_certificate,
-                    authentication_protocol.unwrap(),
-                    restricted_admin_mode || blank_creds,
-                )?,
-                Protocols::ProtocolHybrid,
-            )),
+            Protocols::ProtocolHybrid => match authentication_protocol {
+                Some(ap) => Ok(Client::new(
+                    tpkt.start_nla(check_certificate, ap, restricted_admin_mode || blank_creds)?,
+                    Protocols::ProtocolHybrid,
+                )),
+                None => Err(Error::RdpError(RdpError::new(
+                    RdpErrorKind::InvalidProtocol,
+                    "Authentication protocol not provided for ProtocolHybrid",
+                ))),
+            },
             Protocols::ProtocolSSL => Ok(Client::new(
                 tpkt.start_ssl(check_certificate)?,
                 Protocols::ProtocolSSL,
