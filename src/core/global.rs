@@ -139,7 +139,12 @@ fn share_data_header(
             "shareId" => U32::LE(share_id.unwrap_or(0)),
             "pad1" => 0 as u8,
             "streamId" => 1 as u8,
-            "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), | size | MessageOption::Size("payload".to_string(), size.inner() as usize - 18)),
+            "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), |size| {
+                MessageOption::Size(
+                    "payload".to_string(),
+                    (size.inner() as usize).saturating_sub(18),
+                )
+            }),
             "pduType2" => pdu_type_2.unwrap_or(PDUType2::Pdutype2ArcStatusPdu) as u8,
             "compressedType" => 0 as u8,
             "compressedLength" => U16::LE(0),
