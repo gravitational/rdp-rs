@@ -406,6 +406,13 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
         }
     }
 
+    if !result.contains_key(&MessageType::ScCore) || !result.contains_key(&MessageType::ScNet) {
+        return Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::InvalidRespond,
+            "RDP server did not send required GCC messages",
+        )));
+    }
+
     // All section are important
     Ok(ServerData {
         channel_ids: cast!(
