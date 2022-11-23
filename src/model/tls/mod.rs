@@ -1,8 +1,5 @@
-#[cfg(not(feature = "fips"))]
-#[path = "default.rs"]
-mod imp;
-#[cfg(feature = "fips")]
-#[path = "fips.rs"]
+#[cfg_attr(feature = "fips", path = "fips.rs")]
+#[cfg_attr(not(feature = "fips"), path = "default.rs")]
 mod imp;
 
 use model::error::RdpResult;

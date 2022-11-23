@@ -1,5 +1,3 @@
-extern crate rustls;
-
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use std::fmt;
 use std::io::Error as IoError;

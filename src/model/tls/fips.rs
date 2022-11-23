@@ -1,8 +1,6 @@
-extern crate boring;
-
-use self::boring::ssl::{self, SslConnector, SslMethod, SslStream, SslVerifyMode};
-use self::boring::x509::X509;
-use self::boring::fips;
+use boring::ssl::{self, SslConnector, SslMethod, SslStream, SslVerifyMode};
+use boring::x509::X509;
+use boring::fips;
 use model::error::{Error, RdpResult};
 use std::fmt;
 use std::io::{self, Read, Write};

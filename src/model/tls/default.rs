@@ -1,9 +1,6 @@
-extern crate rustls;
-
-use self::rustls::{
+use rustls::{
     client::{NoClientSessionStorage, ServerCertVerified, ServerCertVerifier},
-    Certificate as RustlsCertificate, ClientConfig, ClientConnection, Error as RustlsError,
-    RootCertStore, ServerName, Stream as RustlsStream,
+    ClientConfig, ClientConnection, RootCertStore, ServerName, Stream,
 };
 use std::convert::TryInto;
 use std::fmt;
@@ -21,23 +18,23 @@ struct DummyTlsVerifier;
 impl ServerCertVerifier for DummyTlsVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &RustlsCertificate,
-        _intermediates: &[RustlsCertificate],
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
         _server_name: &ServerName,
         _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
         _now: SystemTime,
-    ) -> std::result::Result<ServerCertVerified, RustlsError> {
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
         Ok(ServerCertVerified::assertion())
     }
 }
 
 #[derive(Clone)]
-pub struct Certificate(RustlsCertificate);
+pub struct Certificate(rustls::Certificate);
 
 impl Certificate {
     pub fn from_der(der: &[u8]) -> RdpResult<Self> {
-        Ok(Self(RustlsCertificate(der.to_vec())))
+        Ok(Self(rustls::Certificate(der.to_vec())))
     }
 
     pub fn to_der(&self) -> RdpResult<Vec<u8>> {
@@ -49,7 +46,7 @@ impl Certificate {
 /// By removing trait bounds we don't have to update
 /// other structs that depends on the Stream enum
 pub struct TlsStream<T: Sized> {
-    /// Our conneciton
+    /// Our connection
     pub conn: ClientConnection,
 
     /// The underlying transport, like a socket
@@ -70,8 +67,8 @@ where
         &mut self.sock
     }
 
-    fn as_stream(&mut self) -> RustlsStream<ClientConnection, T> {
-        RustlsStream {
+    fn as_stream(&mut self) -> Stream<ClientConnection, T> {
+        Stream {
             conn: &mut self.conn,
             sock: &mut self.sock,
         }
