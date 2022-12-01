@@ -253,7 +253,6 @@ pub enum ServerError {
     ServerShutdown = 0x00000019,
     /// The remote server is busy rebooting.
     ServerReboot = 0x0000001A,
-
     /// An internal error has occurred in the Terminal Services licensing component.
     LicenseInternal = 0x00000100,
     /// A remote desktop license server could not be found to provide a license.
@@ -277,6 +276,44 @@ pub enum ServerError {
     LicenseCantUpgrade = 0x00000109,
     /// The remote computer is not licensed to accept remote connections.
     LicenseNoRemoteConnections = 0x0000010A,
+}
+
+impl ServerError {
+    fn to_string(&self) -> String {
+        match self {
+            ServerError::None => "".to_string(),
+            ServerError::RpcInitiatedDisconnect => "The disconnection was initiated by an administrative tool on the server in another session.".to_string(),
+            ServerError::RpcInitiatedLogoff => "The disconnection was due to a forced logoff initiated by an adminitrative tool on the server in another session.".to_string(),
+            ServerError::IdleTimeout => "The idle session limit timer on the server has elapsed.".to_string(),
+            ServerError::LogonTimeout => "The active session limit timer ont he server has elapsed.".to_string(),
+            ServerError::DisconnectedByOtherConnection => "Another user connected to the server, forcing the disconnection of the current connection.".to_string(),
+            ServerError::OutOfMemory => "The server ran out of available memory resources.".to_string(),
+            ServerError::ServerDeniedConnection => "The server denied the connection.".to_string(),
+            ServerError::InsufficientPrivileges => "The user cannot connect to the server due to insufficient access privileges.".to_string(),
+            ServerError::FreshCredentialsRequired => "The server does not accept saved user credentials and requires that the user enter their credentials for each connection.".to_string(),
+            ServerError::RpcInitiatedDisconnectByUser => "The disconnection was initiated by an administrative tool on the server running in the user's session.".to_string(),
+            ServerError::LogoffByUser => "The disconnection was initiated by the user logging off on the server.".to_string(),
+            ServerError::CloseStackOnDriverNotReady => "The display driver in the remote session did not report any status within the time allotted for startup.".to_string(),
+            ServerError::ServerDwmCrash => "The DWM process running in the remote session terminated unexcpectedly.".to_string(),
+            ServerError::CloseStackOnDriverFailure => "The display driver in the remote session was unable to complete all the tasks required for startup.".to_string(),
+            ServerError::CloseStackOnDriverIfaceFailure => "The display drdiver in the remote session started up successfully, but due to internal failures was not usable by the remoting stack.".to_string(),
+            ServerError::WinlogonCrash => "The Winlogon process running in the remote session terminated unexpectedly.".to_string(),
+            ServerError::CsrssCrash => "The CSRSS process running in the remote session terminated unexpectedly.".to_string(),
+            ServerError::ServerShutdown => "The remote server is busy shutting down.".to_string(),
+            ServerError::ServerReboot => "The remote server is busy rebooting.".to_string(),
+            ServerError::LicenseInternal => "An internal error has occurred in the Terminal Services licensing component.".to_string(),
+            ServerError::NoLicenseServer => "A remote desktop license server could not be found to provide a license.".to_string(),
+            ServerError::NoLicense => "There are no Client Access Licenses available for the target remote computer.".to_string(),
+            ServerError::LicenseBadClientMsg => "The remote computer received an invalid licensing message from the client.".to_string(),
+            ServerError::LicenseHWwidDoesntMatch => "The Client Access License stored by the client has been modified.".to_string(),
+            ServerError::BadClientLicense => "The client Access License stored by the client is in an invalid format.".to_string(),
+            ServerError::LicenseCantFinishProtocol => "Network problems have caused the licensing protocol to be terminated.".to_string(),
+            ServerError::LicenseClientEndedProtocol => "The client prematurely ended the licensing protocol.".to_string(),
+            ServerError::LicenseBadClientEncryption => "A licensing message was incorrectly encrypted.".to_string(),
+            ServerError::LicenseCantUpgrade => "The Client Access License stored by the client could not be upgraded or renewed.".to_string(),
+            ServerError::LicenseNoRemoteConnections => "The remote computer is not licensed to accept remote connections.".to_string(),
+        }
+    }
 }
 
 /// Data PDU container
@@ -746,7 +783,7 @@ pub struct Client {
     /// Name send to the server
     name: String,
     /// Set if the server sends an error before terminating the connection.
-    pub server_error: Option<ServerError>,
+    server_error: ServerError,
 }
 
 impl Client {
@@ -785,7 +822,7 @@ impl Client {
             height,
             layout,
             name: String::from(name),
-            server_error: None,
+            server_error: ServerError::None,
         }
     }
 
@@ -893,11 +930,11 @@ impl Client {
                             data_pdu.message["errorInfo"]
                         )?) {
                             Ok(server_error) => {
-                                self.server_error = Some(server_error);
+                                self.server_error = server_error;
                             }
                             _ => {
                                 println!(
-                                    "GLOBAL: Receive error PDU from server {:?}",
+                                    "GLOBAL: Receive error PDU from server with unexpected errorInfo code {:?}",
                                     cast!(DataType::U32, data_pdu.message["errorInfo"])?
                                 );
                             }
@@ -1165,6 +1202,10 @@ impl Client {
                 }
             }
         }
+    }
+
+    pub fn get_server_disconnect_reason(&self) -> String {
+        self.server_error.to_string()
     }
 }
 
