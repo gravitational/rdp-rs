@@ -14,6 +14,8 @@ use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use std::io::{Cursor, Read, Write};
 
+use super::gcc::HighColor;
+
 /// Raw PDU type use by the protocol
 #[repr(u16)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, TryFromPrimitive)]
@@ -1014,7 +1016,7 @@ impl Client {
                         | capability::GeneralExtraFlag::FastpathOutputSupported as u16
                 )))),
                 capability_set(Some(capability::ts_bitmap_capability_set(
-                    Some(0x0018),
+                    Some(HighColor::HighColor24BPP as u16),
                     Some(self.width),
                     Some(self.height)
                 ))),

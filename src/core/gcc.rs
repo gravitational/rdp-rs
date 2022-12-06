@@ -14,18 +14,44 @@ const H221_SC_KEY: [u8; 4] = *b"McDn";
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u32)]
 #[allow(dead_code)]
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Version {
-    RdpVersion = 0x00080001,
-    RdpVersion5plus = 0x00080004,
+    // RDP 4.0 clients
+    RdpVersion4 = 0x00080001,
+    // RDP 5.0, 5.1, 5.2, 6.0, 6.1, 7.0, 7.1, 8.0, and 8.1 clients
+    RdpVersion5to8 = 0x00080004,
+    RdpVersion10_0 = 0x00080005,
+    RdpVersion10_1 = 0x00080006,
+    RdpVersion10_2 = 0x00080007,
+    RdpVersion10_3 = 0x00080008,
+    RdpVersion10_4 = 0x00080009,
+    RdpVersion10_5 = 0x0008000A,
+    RdpVersion10_6 = 0x0008000B,
+    RdpVersion10_7 = 0x0008000C,
+    RdpVersion10_8 = 0x0008000D,
+    RdpVersion10_9 = 0x0008000E,
+    RdpVersion10_10 = 0x0008000F,
+    RdpVersion10_11 = 0x00080010,
     Unknown,
 }
 
 impl From<u32> for Version {
     fn from(e: u32) -> Self {
         match e {
-            0x00080001 => Version::RdpVersion5plus,
-            0x00080004 => Version::RdpVersion,
+            0x00080001 => Version::RdpVersion4,
+            0x00080004 => Version::RdpVersion5to8,
+            0x00080005 => Version::RdpVersion10_0,
+            0x00080006 => Version::RdpVersion10_1,
+            0x00080007 => Version::RdpVersion10_2,
+            0x00080008 => Version::RdpVersion10_3,
+            0x00080009 => Version::RdpVersion10_4,
+            0x0008000A => Version::RdpVersion10_5,
+            0x0008000B => Version::RdpVersion10_6,
+            0x0008000C => Version::RdpVersion10_7,
+            0x0008000D => Version::RdpVersion10_8,
+            0x0008000E => Version::RdpVersion10_9,
+            0x0008000F => Version::RdpVersion10_10,
+            0x00080010 => Version::RdpVersion10_11,
             _ => Version::Unknown,
         }
     }
@@ -90,7 +116,7 @@ pub enum KeyboardType {
 
 #[repr(u16)]
 #[allow(dead_code)]
-enum HighColor {
+pub enum HighColor {
     HighColor4BPP = 0x0004,
     HighColor8BPP = 0x0008,
     HighColor15BPP = 0x000f,
@@ -218,7 +244,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         height: 0,
         layout: KeyboardLayout::French,
         server_selected_protocol: 0,
-        rdp_version: Version::RdpVersion5plus,
+        rdp_version: Version::RdpVersion5to8,
         name: "".to_string(),
         connection_type: None,
     });
@@ -253,9 +279,9 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "serialNumber" => U32::LE(0),
         "highColorDepth" => U16::LE(HighColor::HighColor24BPP as u16),
         "supportedColorDepths" => U16::LE(
-            //Support::RnsUd15BPPSupport as u16 |
+            Support::RnsUd15BPPSupport as u16 |
             Support::RnsUd16BPPSupport as u16 |
-            //Support::RnsUd24BPPSupport as u16 |
+            Support::RnsUd24BPPSupport as u16 |
             Support::RnsUd32BPPSupport as u16
             ),
         "earlyCapabilityFlags" => U16::LE(capability_flags),
