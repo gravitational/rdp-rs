@@ -314,6 +314,24 @@ impl ServerError {
             ServerError::LicenseNoRemoteConnections => "The remote computer is not licensed to accept remote connections.".to_string(),
         }
     }
+
+    /// Some ServerErrors are really errors, whereas others are moreso
+    /// non-error reasons the server disconnected. This function returns
+    /// true for the former, false for the latter.
+    pub fn is_error(&self) -> bool {
+        match self {
+            ServerError::None |
+            ServerError::RpcInitiatedDisconnect |
+            ServerError::RpcInitiatedLogoff |
+            ServerError::IdleTimeout |
+            ServerError::LogonTimeout |
+            ServerError::FreshCredentialsRequired |
+            ServerError::RpcInitiatedDisconnectByUser |
+            ServerError::LogoffByUser => return false,
+            _ => return true
+        }
+
+    }
 }
 
 /// Data PDU container
