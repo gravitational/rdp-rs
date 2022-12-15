@@ -279,7 +279,7 @@ pub enum ServerError {
 }
 
 impl ServerError {
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             ServerError::None => "".to_string(),
             ServerError::RpcInitiatedDisconnect => "The disconnection was initiated by an administrative tool on the server in another session.".to_string(),
@@ -1204,8 +1204,8 @@ impl Client {
         }
     }
 
-    pub fn get_server_disconnect_reason(&self) -> String {
-        self.server_error.to_string()
+    pub fn server_error(&self) -> ServerError {
+        self.server_error
     }
 }
 
