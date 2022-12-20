@@ -1,6 +1,6 @@
 use core::license;
 use core::mcs;
-use model::data::{Component, DynOption, MessageOption, Trame, U16, U32};
+use model::data::{Component, Trame, U16, U32};
 use model::error::RdpResult;
 use model::unicode::Unicode;
 use std::io::{Read, Write};
@@ -74,9 +74,9 @@ enum AfInet {
 fn rdp_extended_infos(performance_flags: u32) -> Component {
     component![
         "clientAddressFamily" => U16::LE(AfInet::AfInet as u16),
-        "cbClientAddress" => DynOption::new(U16::LE(0), |x| MessageOption::Size("clientAddress".to_string(), x.inner() as usize + 2)),
+        "cbClientAddress" => U16::LE(2),
         "clientAddress" => b"\x00\x00".to_vec(),
-        "cbClientDir" => U16::LE(0),
+        "cbClientDir" => U16::LE(2),
         "clientDir" => b"\x00\x00".to_vec(),
         "clientTimeZone" => vec![0; 172],
         "clientSessionId" => U32::LE(0),
