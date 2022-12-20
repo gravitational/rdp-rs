@@ -58,6 +58,7 @@ pub enum ExtendedInfoFlag {
     PerfDisableFullWindowDrag = 0x00000002,
     PerfDisableMenuAnimations = 0x00000004,
     PerfDisableTheming = 0x00000008,
+    PerfDisableCursorShadow = 0x00000020,
     PerfDisableCursorBlink = 0x00000040,
     PerfEnableFontSmoothing = 0x00000080,
     PerfEnableDesktopComposition = 0x00000100,
