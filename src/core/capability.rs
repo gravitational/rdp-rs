@@ -240,11 +240,31 @@ pub fn ts_bitmap_capability_set(
             "desktopResizeFlag" => U16::LE(0),
             "bitmapCompressionFlag" => Check::new(U16::LE(0x0001)),
             "highColorFlags" => Check::new(0 as u8),
-            "drawingFlags" => 0 as u8,
             "multipleRectangleSupport" => Check::new(U16::LE(0x0001)),
-            "pad2octetsB" => U16::LE(0)
+            "pad2octetsB" => U16::LE(0),
+
+             // See BitmapDrawingFlag below.
+             // Note: this library's bulk decompressor does not support all
+             // of possible features, so advertising support for them here
+             // will require additional updates.
+            "drawingFlags" => 0 ,
         ],
     }
+}
+
+/// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/76670547-e35c-4b95-a242-5729a21b83f6
+#[repr(u8)]
+pub enum BitmapDrawingFlag {
+    /// Indicates support for lossy compression of 32 bpp bitmaps
+    /// by reducing color-fidelity on a per-pixel basis.
+    AllowDynamicColorFidelity = 0x02,
+    /// Indicates support for chroma subsampling when compressing
+    // 32 bpp bitmaps.
+    AllowColorSubsampling = 0x04,
+    /// Indicates that the client supports the removal of the alpha-channel
+    /// when compressing 32 bpp bitmaps. In this case, the alpha is assumed
+    /// to be 0xFF, meaning the bitmap is opaque.
+    AllowSkipAlpha = 0x08,
 }
 
 #[repr(u16)]
