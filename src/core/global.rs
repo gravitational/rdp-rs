@@ -281,7 +281,7 @@ pub enum ServerError {
 }
 
 impl ServerError {
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             ServerError::None => "".to_string(),
             ServerError::RpcInitiatedDisconnect => "The disconnection was initiated by an administrative tool on the server in another session.".to_string(),
@@ -315,6 +315,24 @@ impl ServerError {
             ServerError::LicenseCantUpgrade => "The Client Access License stored by the client could not be upgraded or renewed.".to_string(),
             ServerError::LicenseNoRemoteConnections => "The remote computer is not licensed to accept remote connections.".to_string(),
         }
+    }
+
+    /// Some ServerErrors are really errors, whereas others are moreso
+    /// non-error reasons the server disconnected. This function returns
+    /// true for the former, false for the latter.
+    pub fn is_error(&self) -> bool {
+        match self {
+            ServerError::None |
+            ServerError::RpcInitiatedDisconnect |
+            ServerError::RpcInitiatedLogoff |
+            ServerError::IdleTimeout |
+            ServerError::LogonTimeout |
+            ServerError::FreshCredentialsRequired |
+            ServerError::RpcInitiatedDisconnectByUser |
+            ServerError::LogoffByUser => false,
+            _ => true
+        }
+
     }
 }
 
@@ -1206,8 +1224,8 @@ impl Client {
         }
     }
 
-    pub fn get_server_disconnect_reason(&self) -> String {
-        self.server_error.to_string()
+    pub fn server_error(&self) -> ServerError {
+        self.server_error
     }
 }
 
