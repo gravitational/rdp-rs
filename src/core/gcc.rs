@@ -277,11 +277,11 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "postBeta2ColorDepth" => U16::LE(ColorDepth::RnsUdColor8BPP as u16),
         "clientProductId" => U16::LE(1),
         "serialNumber" => U32::LE(0),
-        "highColorDepth" => U16::LE(HighColor::HighColor24BPP as u16),
+        "highColorDepth" => U16::LE(HighColor::HighColor16BPP as u16),
         "supportedColorDepths" => U16::LE(
-            Support::RnsUd15BPPSupport as u16 |
+            // Support::RnsUd15BPPSupport as u16 |
             Support::RnsUd16BPPSupport as u16 |
-            Support::RnsUd24BPPSupport as u16 |
+            // Support::RnsUd24BPPSupport as u16 |
             Support::RnsUd32BPPSupport as u16
             ),
         "earlyCapabilityFlags" => U16::LE(capability_flags),
