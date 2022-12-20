@@ -327,8 +327,8 @@ impl ServerError {
             ServerError::LogonTimeout |
             ServerError::FreshCredentialsRequired |
             ServerError::RpcInitiatedDisconnectByUser |
-            ServerError::LogoffByUser => return false,
-            _ => return true
+            ServerError::LogoffByUser => false,
+            _ => true
         }
 
     }
