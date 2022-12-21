@@ -72,12 +72,14 @@ enum AfInet {
 
 /// On RDP version > 5
 /// Client have to send IP information
+///
+/// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/05ada9e4-a468-494b-8694-eb806a0ecc89
 fn rdp_extended_infos(performance_flags: u32) -> Component {
     component![
         "clientAddressFamily" => U16::LE(AfInet::AfInet as u16),
-        "cbClientAddress" => U16::LE(2),
+        "cbClientAddress" => U16::LE(2), // size in bytes of the hardcoded null terminator in clientAddress
         "clientAddress" => b"\x00\x00".to_vec(),
-        "cbClientDir" => U16::LE(2),
+        "cbClientDir" => U16::LE(2), // size in bytes of the hardcoded null terminator in clientDir
         "clientDir" => b"\x00\x00".to_vec(),
         "clientTimeZone" => vec![0; 172],
         "clientSessionId" => U32::LE(0),
