@@ -13,6 +13,9 @@ fn process_plane(
     height: u32,
     output: &mut [u8],
 ) -> RdpResult<()> {
+    // process_plane operates on RDP 6.0 RLE Segments, see:
+    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/f7e4c717-669e-4f31-8b34-e8f5ab2e107e
+
     let mut indexw;
     let mut indexh = 0;
     let mut code;
@@ -102,12 +105,30 @@ pub fn rle_32_decompress(
     height: u32,
     output: &mut [u8],
 ) -> RdpResult<()> {
+    // Note: this implementation supports only a subset of the decompression
+    // process. For a more complete illustration of all of the steps, see
+    //
+    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/872615ff-e1ac-469b-9448-2c4452b0d21b
+
     let mut input_cursor = Cursor::new(input);
 
-    if input_cursor.read_u8()? != 0x10 {
+    // Check the format header:
+    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/9b422f69-8e05-4c6d-b6fb-fa02ef75a8f2
+    let header = input_cursor.read_u8()?;
+    let is_rle_compressed = header & 0x10 != 0;
+    let skip_alpha = header & 0x20 != 0;
+    if !is_rle_compressed {
         return Err(Error::RdpError(RdpError::new(
             RdpErrorKind::UnexpectedType,
-            "Bad header",
+            "expected RLE compression: raw color planes are not supported",
+        )));
+    }
+
+    if skip_alpha {
+        // TODO: create a fully opaque alpha plane instead
+        return Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::UnexpectedType,
+            "expected alpha plane: skip alpha not supported",
         )));
     }
 
@@ -115,6 +136,9 @@ pub fn rle_32_decompress(
     process_plane(&mut input_cursor, width, height, &mut output[2..])?;
     process_plane(&mut input_cursor, width, height, &mut output[1..])?;
     process_plane(&mut input_cursor, width, height, &mut output[0..])?;
+
+    // note: when the alpha plane is sent, it often decompresses to 0.
+    // this is corrected for by the consumer of rdp-rs
 
     Ok(())
 }

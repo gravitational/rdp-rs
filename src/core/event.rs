@@ -61,7 +61,6 @@ impl BitmapEvent {
     /// }).unwrap()
     /// ```
     pub fn decompress(self) -> RdpResult<Vec<u8>> {
-        // actually only handle 32 bpp
         match self.bpp {
             32 => {
                 // 32 bpp is straight forward
