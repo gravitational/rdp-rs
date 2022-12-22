@@ -233,7 +233,7 @@ impl<S: Read + Write> Client<S> {
             height: screen_height,
             layout: keyboard_layout,
             server_selected_protocol: self.x224.get_selected_protocols() as u32,
-            rdp_version: Version::RdpVersion5plus,
+            rdp_version: Version::RdpVersion5to8,
             name: client_name,
             connection_type: None,
         }));
@@ -452,7 +452,10 @@ impl<S: Read + Write> Client<S> {
     /// This function check if the client
     /// version protocol choose is 5+
     pub fn is_rdp_version_5_plus(&self) -> bool {
-        self.server_data.as_ref().unwrap().rdp_version == Version::RdpVersion5plus
+        match self.server_data.as_ref().unwrap().rdp_version {
+            Version::RdpVersion4 | Version::Unknown => false,
+            _ => true,
+        }
     }
 
     /// Getter of the user id negotiated during connection steps
