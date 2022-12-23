@@ -2,11 +2,6 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::io::{Cursor, Read};
 
-/// All this uncompress code
-/// Are directly inspired from the source code
-/// of rdesktop and diretly port to rust
-/// Need a little bit of refactoring for rust
-
 fn process_plane(
     input: &mut dyn Read,
     width: u32,
@@ -16,79 +11,58 @@ fn process_plane(
     // process_plane operates on RDP 6.0 RLE Segments, see:
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/f7e4c717-669e-4f31-8b34-e8f5ab2e107e
 
-    let mut indexw;
-    let mut indexh = 0;
-    let mut code;
-    let mut collen;
-    let mut replen;
-    let mut color: i8;
-    let mut x;
-    let mut revcode;
-
     let mut this_line: u32;
     let mut last_line: u32 = 0;
 
+    let mut indexh = 0;
     while indexh < height {
         let mut out = (width * height * 4) - ((indexh + 1) * width * 4);
-        color = 0;
         this_line = out;
-        indexw = 0;
+        let mut indexw = 0;
+
+        // first line uses absolute values, so the raw value is written directly to output
         if last_line == 0 {
             while indexw < width {
-                code = input.read_u8()?;
-                replen = code & 0xf;
-                collen = (code >> 4) & 0xf;
-                revcode = (replen << 4) | collen;
-                if (revcode <= 47) && (revcode >= 16) {
-                    replen = revcode;
-                    collen = 0;
-                }
-                while collen > 0 {
-                    color = input.read_u8()? as i8;
-                    output[out as usize] = color as u8;
+                let (mut run_length, mut raw_bytes) = parse_control_byte(input.read_u8()?);
+                let mut raw = 0u8;
+                while raw_bytes > 0 {
+                    raw = input.read_u8()?;
+                    output[out as usize] = raw;
                     out += 4;
                     indexw += 1;
-                    collen -= 1;
+                    raw_bytes -= 1;
                 }
-                while replen > 0 {
-                    output[out as usize] = color as u8;
+                while run_length > 0 {
+                    output[out as usize] = raw;
                     out += 4;
                     indexw += 1;
-                    replen -= 1;
+                    run_length -= 1;
                 }
             }
         } else {
+            // subsequent scan lines compute delta values from the previous line,
+            // so there's some extra math before we write into output
             while indexw < width {
-                code = input.read_u8()?;
-                replen = code & 0xf;
-                collen = (code >> 4) & 0xf;
-                revcode = (replen << 4) | collen;
-                if (revcode <= 47) && (revcode >= 16) {
-                    replen = revcode;
-                    collen = 0;
-                }
-                while collen > 0 {
-                    x = input.read_u8()?;
-                    if x & 1 != 0 {
-                        x = x >> 1;
-                        x = x + 1;
-                        color = -(x as i32) as i8;
-                    } else {
-                        x = x >> 1;
-                        color = x as i8;
-                    }
-                    x = (output[(last_line + (indexw * 4)) as usize] as i32 + color as i32) as u8;
-                    output[out as usize] = x;
+                let (mut run_length, mut raw_bytes) = parse_control_byte(input.read_u8()?);
+                let mut delta: i32 = 0;
+
+                // the unsigned, 8-bit delta values are added to the absolute values of the
+                // previous scan-line using 1-byte arithmetic
+                let mut compute_delta = |d: i32| {
+                    output[out as usize] =
+                        (output[(last_line + (indexw * 4)) as usize] as i32 + d) as u8;
                     out += 4;
                     indexw += 1;
-                    collen -= 1;
+                };
+
+                while raw_bytes > 0 {
+                    delta = decode_delta(input.read_u8()?);
+                    compute_delta(delta);
+                    raw_bytes -= 1;
                 }
-                while replen > 0 {
-                    x = (output[(last_line + (indexw * 4)) as usize] as i32 + color as i32) as u8;
-                    output[out as usize] = x;
-                    out += 4;
-                    indexw += 1;
-                    replen -= 1;
+                while run_length > 0 {
+                    compute_delta(delta);
+                    run_length -= 1;
                 }
             }
         }
@@ -97,6 +71,51 @@ fn process_plane(
     }
     Ok(())
 }
+
+/// Extracts the run length and number of raw bytes from the
+/// RDP 6.0 RLE Segment's control byte.
+///
+/// See: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/f7e4c717-669e-4f31-8b34-e8f5ab2e107e
+fn parse_control_byte(control: u8) -> (u8, u8) {
+    let mut run_length = control & 0xf;
+    let mut raw_bytes = (control >> 4) & 0xf;
+
+    // TODO: check for control==0 which is not allowed per spec
+
+    // Because a RUN MUST be a sequence of at least three values (section 3.1.9.2),
+    // the values 1 and 2 are used in the run length field to encode extra long
+    // RUN sequences of more than 16 values:
+    let revcode = (run_length << 4) | raw_bytes;
+    if (revcode <= 47) && (revcode >= 16) {
+        run_length = revcode;
+        raw_bytes = 0;
+    }
+
+    (run_length, raw_bytes)
+}
+
+/// Performs delta transformation to the delta value as per section 3.1.9.2.3.
+/// This applies to all scan lines other than the first line.
+///
+/// See See: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/46a9972c-0cdd-4673-add4-87f89b837742
+fn decode_delta(mut delta: u8) -> i32 {
+    if delta & 1 != 0 {
+        // If the encoded delta value is odd, then decrement it by 1,
+        // shift it 1 bit toward the lowest bit, and subtract it from 255.
+        delta = delta >> 1;
+        delta = delta + 1;
+        -(delta as i32)
+    } else {
+        // If the encoded delta value is even, shift it 1 bit toward the lowest bit.
+        delta = delta >> 1;
+        delta as i32
+    }
+}
+
+const FORMAT_HEADER_CLL_MASK: u8 = 0x07;
+const FORMAT_HEADER_CS: u8 = 1 << 3;
+const FORMAT_HEADER_RLE: u8 = 1 << 4;
+const FORMAT_HEADER_NA: u8 = 1 << 5;
 
 /// Run length encoding decoding function for 32 bpp
 pub fn rle_32_decompress(
@@ -109,18 +128,37 @@ pub fn rle_32_decompress(
     // process. For a more complete illustration of all of the steps, see
     //
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/872615ff-e1ac-469b-9448-2c4452b0d21b
+    // https://github.com/FreeRDP/FreeRDP/blob/9a80afeb08acfbc99992323b4bb41d8dd7befff5/libfreerdp/codec/planar.c#L633
 
     let mut input_cursor = Cursor::new(input);
 
     // Check the format header:
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/9b422f69-8e05-4c6d-b6fb-fa02ef75a8f2
-    let header = input_cursor.read_u8()?;
-    let is_rle_compressed = header & 0x10 != 0;
-    let skip_alpha = header & 0x20 != 0;
-    if !is_rle_compressed {
+    let format_header = input_cursor.read_u8()?;
+    let cll = format_header & FORMAT_HEADER_CLL_MASK;
+    let cs = format_header & FORMAT_HEADER_CS != 0;
+    let rle = format_header & FORMAT_HEADER_RLE != 0;
+    let skip_alpha = format_header & FORMAT_HEADER_NA != 0;
+
+    // this is invalid per the spec and should never happen
+    if cll == 0 && cs {
+        return Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::UnexpectedType,
+            "chroma subsampling requires AYCoCg and does not work with RGB data",
+        )));
+    }
+
+    // these are valid configurations, but not currently supported in this library
+    if !rle {
         return Err(Error::RdpError(RdpError::new(
             RdpErrorKind::UnexpectedType,
             "expected RLE compression: raw color planes are not supported",
+        )));
+    }
+    if cs {
+        return Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::UnexpectedType,
+            "chroma subsampling is not supported",
         )));
     }
 
@@ -132,10 +170,10 @@ pub fn rle_32_decompress(
         )));
     }
 
-    process_plane(&mut input_cursor, width, height, &mut output[3..])?;
-    process_plane(&mut input_cursor, width, height, &mut output[2..])?;
-    process_plane(&mut input_cursor, width, height, &mut output[1..])?;
-    process_plane(&mut input_cursor, width, height, &mut output[0..])?;
+    process_plane(&mut input_cursor, width, height, &mut output[3..])?; // alpha
+    process_plane(&mut input_cursor, width, height, &mut output[2..])?; // blue
+    process_plane(&mut input_cursor, width, height, &mut output[1..])?; // green
+    process_plane(&mut input_cursor, width, height, &mut output[0..])?; // red
 
     // note: when the alpha plane is sent, it often decompresses to 0.
     // this is corrected for by the consumer of rdp-rs
@@ -420,4 +458,47 @@ pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
         }
     }
     result_32_bpp
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::process_plane;
+
+    #[test]
+    fn decode_sequence() {
+        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/46a9972c-0cdd-4673-add4-87f89b837742
+        let encoded_plane: Vec<u8> = vec![
+            0x13, 0xFF, 0x20, 0xFE, 0xFD, 0x60, 0x01, 0x7D, 0xF5, 0xC2, 0x9A, 0x38, 0x60, 0x01,
+            0x67, 0x8B, 0xA3, 0x78, 0xAF,
+        ];
+        let (width, height) = (6u32, 3u32);
+
+        let mut input_cursor = Cursor::new(encoded_plane);
+
+        // width * height * 4 bytes/pixel
+        let mut output = vec![0 as u8; width as usize * height as usize * 4];
+        process_plane(&mut input_cursor, width, height, &mut output).expect("decode failed");
+
+        // the decoded plane from the MSFT example
+        // (in the doc the scan lines are listed in reverse order)
+        let decoded: Vec<u8> = vec![
+            253, 140, 62, 14, 135, 193, //
+            254, 192, 132, 96, 75, 25, //
+            255, 255, 255, 255, 254, 253, //
+        ];
+
+        // process_plane assumes 32 bits per pixel, and writes a decoded
+        // value one every 4 bytes, so construct the expected value first
+        let mut want = Vec::with_capacity(decoded.len() * 4);
+        for d in decoded.iter() {
+            want.push(*d);
+            want.push(0);
+            want.push(0);
+            want.push(0);
+        }
+
+        assert_eq!(output, want);
+    }
 }

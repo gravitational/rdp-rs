@@ -247,7 +247,7 @@ pub fn ts_bitmap_capability_set(
              // Note: this library's bulk decompressor does not support all
              // of possible features, so advertising support for them here
              // will require additional updates.
-            "drawingFlags" => 0 ,
+            "drawingFlags" => 0
         ],
     }
 }
