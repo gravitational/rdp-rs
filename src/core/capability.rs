@@ -240,14 +240,13 @@ pub fn ts_bitmap_capability_set(
             "desktopResizeFlag" => U16::LE(0),
             "bitmapCompressionFlag" => Check::new(U16::LE(0x0001)),
             "highColorFlags" => Check::new(0 as u8),
+            // See BitmapDrawingFlag below.
+            // Note: this library's bulk decompressor does not support all
+            // of possible features, so advertising support for them here
+            // will require additional updates.
+            "drawingFlags" => 0 as u8,
             "multipleRectangleSupport" => Check::new(U16::LE(0x0001)),
-            "pad2octetsB" => U16::LE(0),
-
-             // See BitmapDrawingFlag below.
-             // Note: this library's bulk decompressor does not support all
-             // of possible features, so advertising support for them here
-             // will require additional updates.
-            "drawingFlags" => 0
+            "pad2octetsB" => U16::LE(0)
         ],
     }
 }
