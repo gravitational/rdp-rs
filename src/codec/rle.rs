@@ -13,6 +13,7 @@ fn process_plane(
 
     let mut this_line: u32;
     let mut last_line: u32 = 0;
+    let mut raw = 0u8;
 
     let mut indexh = 0;
     while indexh < height {
@@ -24,7 +25,6 @@ fn process_plane(
         if last_line == 0 {
             while indexw < width {
                 let (mut run_length, mut raw_bytes) = parse_control_byte(input.read_u8()?);
-                let mut raw = 0u8;
                 while raw_bytes > 0 {
                     raw = input.read_u8()?;
                     output[out as usize] = raw;
@@ -42,15 +42,15 @@ fn process_plane(
         } else {
             // subsequent scan lines compute delta values from the previous line,
             // so there's some extra math before we write into output
+            let mut delta = 0;
             while indexw < width {
                 let (mut run_length, mut raw_bytes) = parse_control_byte(input.read_u8()?);
-                let mut delta: i32 = 0;
 
                 // the unsigned, 8-bit delta values are added to the absolute values of the
                 // previous scan-line using 1-byte arithmetic
-                let mut compute_delta = |d: i32| {
+                let mut compute_delta = |d: i8| {
                     output[out as usize] =
-                        (output[(last_line + (indexw * 4)) as usize] as i32 + d) as u8;
+                        (output[(last_line + (indexw * 4)) as usize] as i32 + d as i32) as u8;
                     out += 4;
                     indexw += 1;
                 };
@@ -98,17 +98,17 @@ fn parse_control_byte(control: u8) -> (u8, u8) {
 /// This applies to all scan lines other than the first line.
 ///
 /// See See: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/46a9972c-0cdd-4673-add4-87f89b837742
-fn decode_delta(mut delta: u8) -> i32 {
+fn decode_delta(mut delta: u8) -> i8 {
     if delta & 1 != 0 {
         // If the encoded delta value is odd, then decrement it by 1,
         // shift it 1 bit toward the lowest bit, and subtract it from 255.
         delta = delta >> 1;
         delta = delta + 1;
-        -(delta as i32)
+        -(delta as i32) as i8
     } else {
         // If the encoded delta value is even, shift it 1 bit toward the lowest bit.
         delta = delta >> 1;
-        delta as i32
+        delta as i8
     }
 }
 
@@ -175,10 +175,20 @@ pub fn rle_32_decompress(
     process_plane(&mut input_cursor, width, height, &mut output[1..])?; // green
     process_plane(&mut input_cursor, width, height, &mut output[0..])?; // red
 
-    // note: when the alpha plane is sent, it often decompresses to 0.
-    // this is corrected for by the consumer of rdp-rs
+    // we always overwrite the alpha to be fully opaque
+    // (either because it wasn't sent, or because Windows often sends it as fully transparent)
+    set_plane(0xFF, width, height, &mut output[3..]);
 
     Ok(())
+}
+
+fn set_plane(value: u8, width: u32, height: u32, output: &mut [u8]) {
+    for indexh in 0..height {
+        for indexw in 0..width {
+            let out = (indexh * width * 4) + (4 * indexw);
+            output[out as usize] = value;
+        }
+    }
 }
 
 macro_rules! repeat {
@@ -462,12 +472,13 @@ pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use super::process_plane;
+    use super::rle_32_decompress;
+    use super::set_plane;
     use std::io::Cursor;
 
-    use super::process_plane;
-
     #[test]
-    fn decode_sequence() {
+    fn test_process_plane() {
         // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/46a9972c-0cdd-4673-add4-87f89b837742
         let encoded_plane: Vec<u8> = vec![
             0x13, 0xFF, 0x20, 0xFE, 0xFD, 0x60, 0x01, 0x7D, 0xF5, 0xC2, 0x9A, 0x38, 0x60, 0x01,
@@ -500,5 +511,30 @@ mod tests {
         }
 
         assert_eq!(output, want);
+    }
+
+    #[test]
+    fn test_rle_32_decompress() {
+        for entry in std::fs::read_dir("./src/codec/rle/testdata").expect("reading testdata") {
+            let mut name = entry.unwrap().path();
+            match name.extension() {
+                Some(ext) if ext == "in" => {}
+                _ => continue,
+            }
+
+            let (width, height) = (64u32, 64u32);
+
+            let input = std::fs::read(&name).expect(&format!("reading in {:?}", name));
+
+            assert_eq!(true, name.set_extension("out"));
+            let mut out = std::fs::read(&name).expect(&format!("reading out {:?}", name));
+            set_plane(0xFF, width, height, &mut out[3..]); // set alpha plane to opaque
+
+            let mut result = vec![0 as u8; width as usize * height as usize * 4];
+            rle_32_decompress(&input, width, height, &mut result).unwrap();
+
+            assert_eq!(out.len(), result.len());
+            assert_eq!(out, result, "for file {:?}", name);
+        }
     }
 }
