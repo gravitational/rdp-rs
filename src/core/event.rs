@@ -60,7 +60,7 @@ impl BitmapEvent {
     ///     }
     /// }).unwrap()
     /// ```
-    pub fn decompress(self) -> RdpResult<Vec<u8>> {
+    pub fn decompress(&self) -> RdpResult<Vec<u8>> {
         match self.bpp {
             32 => {
                 // 32 bpp is straight forward
@@ -74,7 +74,11 @@ impl BitmapEvent {
                     )?;
                     result
                 } else {
-                    self.data
+                    // just for bench test so I can use reference to the struct
+                    // before that change this method was moving it so I would need to re-create it every iteration 
+                    // we won't use uncompressed data in the bench anyway
+                    // but it will make the code that depends on this function invalid so do not merge it
+                    vec![]
                 })
             }
             16 => {
@@ -115,6 +119,30 @@ impl BitmapEvent {
             ))),
         }
     }
+
+    pub fn decompress_to_buffer(&self, buf: &mut [u8]) -> RdpResult<()> {
+        match self.bpp {
+            32 => {
+                // 32 bpp is straight forward
+                // let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
+                rle_32_decompress(
+                    &self.data,
+                    self.width as u32,
+                    self.height as u32,
+                    buf,
+                )?;
+                Ok(())
+            }
+           _ => Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::NotImplemented,
+                &format!(
+                    "Decompression Algorithm not implemented for bpp {}",
+                    self.bpp
+                ),
+            ))),
+        }
+    }
+
 }
 
 #[repr(u8)]
