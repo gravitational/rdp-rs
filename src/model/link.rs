@@ -122,6 +122,7 @@ impl<S: Read + Write> Link<S> {
     ///         "foo" => U32::LE(1)
     ///     ]).unwrap();
     ///
+    ///     # #[cfg(feature = "integration")]
     ///     if let Stream::Raw(r) = link.get_stream() {
     ///         assert_eq!(r.into_inner(), [1, 0, 0, 0])
     ///     }

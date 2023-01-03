@@ -74,7 +74,7 @@ impl<S: Read + Write> RdpClient<S> {
     /// ```no_run
     /// use std::net::{SocketAddr, TcpStream};
     /// use rdp::core::client::Connector;
-    /// use rdp::core::event::{RdpEvent, PointerEvent, PointerButton};
+    /// use rdp::core::event::{RdpEvent, PointerEvent, PointerButton, PointerWheel};
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let tcp = TcpStream::connect(&addr).unwrap();
     /// let mut connector = Connector::new()
@@ -87,6 +87,8 @@ impl<S: Read + Write> RdpClient<S> {
     ///         x: 100 as u16,
     ///         y: 100 as u16,
     ///         button: PointerButton::Left,
+    ///         wheel: PointerWheel::None,
+    ///         wheel_delta: 0,
     ///         down: true
     ///     }
     /// )).unwrap()

@@ -58,7 +58,7 @@ impl<S: Read + Write> Client<S> {
     ///
     /// # Example
     /// ```
-    /// #[macro_use]
+    /// # #[macro_use]
     /// # extern crate rdp;
     /// # use rdp::core::tpkt;
     /// # use rdp::model::link;
@@ -69,13 +69,14 @@ impl<S: Read + Write> Client<S> {
     ///     tpkt.write(trame![U16::BE(4), U32::LE(3)]).unwrap();
     ///     // get_link and get_stream are not available on Crate
     ///     // only use for integration test [features = integration]
+    ///     # #[cfg(feature = "integration")]
     ///     if let link::Stream::Raw(e) = tpkt.get_link().get_stream() {
     ///         assert_eq!(e.into_inner(), [3, 0, 0, 10, 0, 4, 3, 0, 0, 0])
     ///     }
     ///     else {
     ///         panic!("Must not happen")
     ///     }
-    /// }
+    /// # }
     /// ```
     pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where
