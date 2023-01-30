@@ -1,4 +1,5 @@
 use crate::codec::rle::{rgb565torgb32, rle_16_decompress, rle_32_decompress};
+use crate::core::orders::DrawingOrder;
 use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
 
@@ -178,4 +179,6 @@ pub enum RdpEvent {
     Pointer(PointerEvent),
     /// Keyboard event
     Key(KeyboardEvent),
+    /// Drawing order events
+    DrawingOrder(DrawingOrder),
 }

@@ -6,6 +6,7 @@ use crate::core::event::{
 use crate::core::gcc::KeyboardLayout;
 use crate::core::mcs;
 use crate::core::tpkt;
+use crate::core::orders::*;
 use crate::model::data::{
     to_vec, Array, Check, Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32,
 };
@@ -648,6 +649,7 @@ impl FastPathUpdate {
         let fp_update_type =
             FastPathUpdateType::try_from(cast!(DataType::U8, fast_path["updateHeader"])? & 0xf)?;
         let mut result = match fp_update_type {
+            FastPathUpdateType::FastpathUpdatetypeOrders => ts_fp_update_orders(),
             FastPathUpdateType::FastpathUpdatetypeBitmap => ts_fp_update_bitmap(),
             FastPathUpdateType::FastpathUpdatetypeColor => ts_colorpointerattribute(),
             FastPathUpdateType::FastpathUpdatetypeSynchronize => ts_fp_update_synchronize(),
@@ -717,6 +719,19 @@ fn ts_fp_update_bitmap() -> FastPathUpdate {
             "header" => Check::new(U16::LE(FastPathUpdateType::FastpathUpdatetypeBitmap as u16)),
             "numberRectangles" => U16::LE(0),
             "rectangles" => Array::new(ts_bitmap_data)
+        ],
+    }
+}
+
+/// Fast-Path Orders Update
+///
+/// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegdi/7f53bb28-92e9-4cbe-a15f-8553c902e3c4
+fn ts_fp_update_orders() -> FastPathUpdate {
+    FastPathUpdate {
+        fp_type: FastPathUpdateType::FastpathUpdatetypeOrders,
+        message: component![
+            "numberOrders" => U16::LE(0),
+            "orderData" => Vec::<u8>::new()
         ],
     }
 }
@@ -810,6 +825,12 @@ pub struct Client {
     name: String,
     /// Set if the server sends an error before terminating the connection.
     server_error: ServerError,
+    /// The Primary Drawing Order History store holds information on the
+    /// fields that have been received in primary drawing orders.
+    /// These records are updated as each primary drawing order is processed,
+    /// and are used to efficiently decode and process
+    /// primary drawing orders received from the server
+    primary_drawing_orders_history: PrimaryDrawingOrderHistory,
 }
 
 impl Client {
@@ -849,6 +870,7 @@ impl Client {
             layout,
             name: String::from(name),
             server_error: ServerError::None,
+            primary_drawing_orders_history: PrimaryDrawingOrderHistory::default(),
         }
     }
 
@@ -989,6 +1011,25 @@ impl Client {
             match FastPathUpdate::from_fp(cast!(DataType::Component, fp_message)?) {
                 Ok(order) => {
                     match order.fp_type {
+                        FastPathUpdateType::FastpathUpdatetypeOrders => {
+                            let order_count = cast!(DataType::U16, order.message["numberOrders"])?;
+                            let mut order_data =
+                                Cursor::new(cast!(DataType::Slice, order.message["orderData"])?);
+
+                            log::debug!(
+                                "FAST PATH UPDATE ORDERS: {} -> {:?}",
+                                order_count,
+                                order_data
+                            );
+
+                            for order in process_orders_data(
+                                order_count,
+                                &mut order_data,
+                                &mut self.primary_drawing_orders_history,
+                            )? {
+                                callback(RdpEvent::DrawingOrder(order));
+                            }
+                        }
                         FastPathUpdateType::FastpathUpdatetypeBitmap => {
                             for rectangle in cast!(DataType::Trame, order.message["rectangles"])? {
                                 let bitmap = cast!(DataType::Component, rectangle)?;
@@ -1049,6 +1090,7 @@ impl Client {
                         | capability::OrderFlag::ZEROBOUNDSDELTASSUPPORT as u16
                 )))),
                 capability_set(Some(capability::ts_bitmap_cache_capability_set())),
+                capability_set(Some(capability::ts_bitmap_cache_rev2_capability_set())),
                 capability_set(Some(capability::ts_pointer_capability_set())),
                 capability_set(Some(capability::ts_sound_capability_set())),
                 capability_set(Some(capability::ts_input_capability_set(
