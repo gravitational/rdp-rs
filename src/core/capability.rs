@@ -289,6 +289,41 @@ pub enum OrderFlag {
 /// assert_eq!(to_vec(&capability_set), vec![3, 0, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 20, 0, 0, 0, 1, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 132, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 /// ```
 pub fn ts_order_capability_set(order_flags: Option<u16>) -> Capability {
+    let order_support: Vec<u8> = vec![
+        0, // TS_NEG_DSTBLT_INDEX                   => DstBlt
+        0, // TS_NEG_PATBLT_INDEX                   => PatBlt& OpaqueRect
+        0, // TS_NEG_SCRBLT_INDEX                   => ScrBlt
+        1, // TS_NEG_MEMBLT_INDEX                   => MemBlt
+        1, // TS_NEG_MEM3BLT_INDEX                  => Mem3Blt
+        0, // UnusedIndex1
+        0, // UnusedIndex2
+        0, // TS_NEG_DRAWNINEGRID_INDEX             => DrawNineGrid
+        0, // TS_NEG_LINETO_INDEX                   => LineTo
+        0, // TS_NEG_MULTI_DRAWNINEGRID_INDEX       => MultiDrawNineGrid
+        0, // UnusedIndex3
+        0, // TS_NEG_SAVEBITMAP_INDEX               => SaveBitmap
+        0, // UnusedIndex4
+        0, // UnusedIndex5
+        0, // UnusedIndex6
+        0, // TS_NEG_MULTIDSTBLT_INDEX              => MultiDstBlt
+        0, // TS_NEG_MULTIPATBLT_INDEX              => MultiPatBlt
+        0, // TS_NEG_MULTISCRBLT_INDEX              => MultiScrBlt
+        0, // TS_NEG_MULTIOPAQUERECT_INDEX          => MultiOpaqueRect
+        0, // TS_NEG_FAST_INDEX_INDEX               => FastIndex
+        0, // TS_NEG_POLYGON_SC_INDEX               => PolygonSC & PolygonCB
+        0, // TS_NEG_POLYGON_CB_INDEX               => PolygonSC & PolygonCB
+        0, // TS_NEG_POLYLINE_INDEX                 => Polyline
+        0, // UnusedIndex7
+        0, // TS_NEG_FAST_GLYPH_INDEX               => FastGlyph
+        0, // TS_NEG_ELLIPSE_SC_INDEX               => EllipseSC & EllipseCB
+        0, // TS_NEG_ELLIPSE_CB_INDEX               => EllipseSC & EllipseCB
+        0, // TS_NEG_INDEX_INDEX                    => GlyphIndex
+        0, // UnusedIndex8
+        0, // UnusedIndex9
+        0, // UnusedIndex10
+        0, // UnusedIndex11
+    ];
+
     Capability {
         cap_type: CapabilitySetType::CapstypeOrder,
         message: component![
@@ -300,7 +335,7 @@ pub fn ts_order_capability_set(order_flags: Option<u16>) -> Capability {
             "maximumOrderLevel" => U16::LE(1),
             "numberFonts" => U16::LE(0),
             "orderFlags" => U16::LE(order_flags.unwrap_or(OrderFlag::NEGOTIATEORDERSUPPORT as u16)),
-            "orderSupport" => vec![0 as u8; 32],
+            "orderSupport" => order_support,
             "textFlags" => U16::LE(0),
             "orderSupportExFlags" => U16::LE(0),
             "pad4octetsB" => U32::LE(0),
@@ -340,6 +375,45 @@ pub fn ts_bitmap_cache_capability_set() -> Capability {
             "cache1MaximumCellSize" => U16::LE(0),
             "cache2Entries" => U16::LE(0),
             "cache2MaximumCellSize" => U16::LE(0)
+        ],
+    }
+}
+
+/// Bitmap cache Revision 2
+///
+/// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a5b9b9a6-5f67-4089-a95d-009bc8e25bfc
+pub fn ts_bitmap_cache_rev2_capability_set() -> Capability {
+    /*
+    TODO: update NumEntries
+    right now:
+    600 with persistent bit set
+    600 with persistent bit set
+    2048 with persistent bit set
+    4096 with persistent bit set
+    2048 with persistent bit set
+     */
+    Capability {
+        cap_type: CapabilitySetType::CapstypeBitmapcacheRev2,
+        message: component![
+            "CacheFlags" => U16::LE(0),
+            "Pad2" => 0 as u8,
+            "NumCellCaches" => 5 as u8,
+            "BitmapCache0CellInfo" => component![
+                "NumEntries" => U32::LE(2147484248)
+            ],
+            "BitmapCache1CellInfo" => component![
+                "NumEntries" => U32::LE(2147484248)
+            ],
+            "BitmapCache2CellInfo" => component![
+                "NumEntries" => U32::LE(2147485696)
+            ],
+            "BitmapCache3CellInfo" => component![
+                "NumEntries" => U32::LE(2147487744)
+            ],
+            "BitmapCache4CellInfo" => component![
+                "NumEntries" => U32::LE(2147485696)
+            ],
+            "pad" => vec![0 as u8; 12]
         ],
     }
 }

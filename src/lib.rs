@@ -1,3 +1,5 @@
+extern crate bit_field;
+extern crate bitflags;
 #[cfg(feature = "fips")]
 extern crate boring;
 extern crate byteorder;
@@ -8,6 +10,7 @@ extern crate gethostname;
 extern crate hex;
 extern crate hmac;
 extern crate indexmap;
+extern crate log;
 extern crate md4;
 extern crate md5;
 #[cfg(feature = "mstsc-rs")]

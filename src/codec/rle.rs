@@ -470,6 +470,44 @@ pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
     result_32_bpp
 }
 
+
+pub fn decompress(data: &[u8], width: u32, height: u32, bpp: u16) -> RdpResult<Vec<u8>> {
+    match bpp {
+        32 => {
+            let mut result = vec![0 as u8; width as usize * height as usize * 4];
+            rle_32_decompress(
+                data,
+                width as u32,
+                height as u32,
+                &mut result,
+            )?;
+            Ok(result)
+       },
+       16 => {
+        let mut result_16bpp = vec![0 as u16; width as usize * height as usize * 2];
+        rle_16_decompress(
+                &data,
+                width as usize,
+                height as usize,
+                &mut result_16bpp,
+        )?;
+
+        Ok(rgb565torgb32(
+            &result_16bpp,
+            width as usize,
+            height as usize,
+        ))
+    }
+       _ => Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::NotImplemented,
+            &format!(
+                "Decompression Algorithm not implemented for bpp {}",
+                bpp
+            ),
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::process_plane;
