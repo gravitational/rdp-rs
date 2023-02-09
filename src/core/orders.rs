@@ -91,10 +91,10 @@ pub struct CacheColorTable {
 
 bitflags! {
     struct CacheBitmapCompressedRev2Flags: u16 {
-        const HeightSameAsWidth = 0x01;
-        const PersistentKeyPresent = 0x02;
-        const NoBitmapCompressionHdr = 0x08;
-        const DoNotCache = 0x10;
+        const HEIGHT_SAME_AS_WIDTH = 0x01;
+        const PERSISTENT_KEY_PRESENT = 0x02;
+        const NO_BITMAP_COMPRESSION_HDR = 0x08;
+        const DO_NOT_CACHE = 0x10;
     }
 }
 
@@ -143,14 +143,14 @@ impl DrawingOrderSecondary {
                 );
 
                 let persistent_cache_key =
-                    if flags.contains(CacheBitmapCompressedRev2Flags::PersistentKeyPresent) {
+                    if flags.contains(CacheBitmapCompressedRev2Flags::PERSISTENT_KEY_PRESENT) {
                         Some(orders_data.read_u64::<LittleEndian>()?)
                     } else {
                         None
                     };
 
                 let width = two_byte_unsigned(orders_data)?;
-                let height = if flags.contains(CacheBitmapCompressedRev2Flags::HeightSameAsWidth) {
+                let height = if flags.contains(CacheBitmapCompressedRev2Flags::HEIGHT_SAME_AS_WIDTH) {
                     width
                 } else {
                     two_byte_unsigned(orders_data)?
@@ -159,7 +159,7 @@ impl DrawingOrderSecondary {
                 let bitmap_length = four_byte_unsigned(orders_data)?;
                 let cache_index = two_byte_unsigned(orders_data)?;
 
-                if flags.contains(CacheBitmapCompressedRev2Flags::DoNotCache)
+                if flags.contains(CacheBitmapCompressedRev2Flags::DO_NOT_CACHE)
                     && cache_index != BITMAPCACHE_WAITING_LIST_INDEX
                 {
                     return Err(Error::TryError(format!(
@@ -168,7 +168,7 @@ impl DrawingOrderSecondary {
                     )));
                 };
 
-                if !flags.contains(CacheBitmapCompressedRev2Flags::NoBitmapCompressionHdr) {
+                if !flags.contains(CacheBitmapCompressedRev2Flags::NO_BITMAP_COMPRESSION_HDR) {
                     let _cb_comp_first_row_size = orders_data.read_u16::<LittleEndian>()?;
                     let _cb_comp_main_body_size = orders_data.read_u16::<LittleEndian>()?;
                     let _cb_scan_width = orders_data.read_u16::<LittleEndian>()?;
