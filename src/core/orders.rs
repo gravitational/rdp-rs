@@ -396,7 +396,7 @@ impl PrimaryDrawingOrder {
 
 fn coord_field(data: &mut impl Read, last_value: i32, delta: bool) -> RdpResult<i32> {
     if delta {
-        Ok(last_value + data.read_u8()? as i32)
+        Ok(last_value + data.read_i8()? as i32)
     } else {
         Ok(data.read_u16::<LittleEndian>()? as i32)
     }
