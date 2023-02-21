@@ -2,7 +2,7 @@
 #[cfg_attr(not(feature = "fips"), path = "default.rs")]
 mod imp;
 
-use model::error::RdpResult;
+use crate::model::error::RdpResult;
 use std::fmt;
 use std::io::{self, Read, Write};
 

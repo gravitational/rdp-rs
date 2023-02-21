@@ -1,8 +1,8 @@
-use core::license;
-use core::mcs;
-use model::data::{Component, Trame, U16, U32};
-use model::error::RdpResult;
-use model::unicode::Unicode;
+use crate::core::license;
+use crate::core::mcs;
+use crate::model::data::{Component, Trame, U16, U32};
+use crate::model::error::RdpResult;
+use crate::model::unicode::Unicode;
 use std::io::{Read, Write};
 
 /// Security flag send as header flage in core ptotocol

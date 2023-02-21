@@ -1,5 +1,5 @@
-use model::data::Message;
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::data::Message;
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::io::{Cursor, Read, Write};
 
 use super::tls::{Certificate, TlsStream};

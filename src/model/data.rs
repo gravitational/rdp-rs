@@ -1,6 +1,6 @@
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read, Write};
 

@@ -1,5 +1,5 @@
-use codec::rle::{rgb565torgb32, rle_16_decompress, rle_32_decompress};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::codec::rle::{rgb565torgb32, rle_16_decompress, rle_32_decompress};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
 
 /// A bitmap event is used

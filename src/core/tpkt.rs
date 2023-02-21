@@ -1,8 +1,8 @@
-use model::data::{Component, Message, Trame, U16};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use model::link::Link;
-use nla::cssp::cssp_connect;
-use nla::sspi::AuthenticationProtocol;
+use crate::model::data::{Component, Message, Trame, U16};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::link::Link;
+use crate::nla::cssp::cssp_connect;
+use crate::nla::sspi::AuthenticationProtocol;
 use std::io::{Cursor, Read, Write};
 
 /// TPKT must implement this two kind of payload
@@ -238,8 +238,8 @@ impl<S: Read + Write> Client<S> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use model::data::{DataType, U32};
-    use model::link::Stream;
+    use crate::model::data::{DataType, U32};
+    use crate::model::link::Stream;
     use std::io::Cursor;
 
     /// Test the tpkt header type in write context

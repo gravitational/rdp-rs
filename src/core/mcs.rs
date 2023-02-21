@@ -1,14 +1,14 @@
-use core::gcc::{
+use crate::core::gcc::{
     block_header, channel_def, client_core_data, client_network_data, client_security_data,
     read_conference_create_response, write_conference_create_request, ClientData, KeyboardLayout,
     MessageType, ServerData, Version,
 };
-use core::per;
-use core::tpkt;
-use core::x224;
-use model::data::{to_vec, DataType, Message, Trame, U16};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use nla::asn1::{
+use crate::core::per;
+use crate::core::tpkt;
+use crate::core::x224;
+use crate::model::data::{to_vec, DataType, Message, Trame, U16};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::nla::asn1::{
     from_ber, to_der, ASN1Type, Enumerate, ImplicitTag, Integer, OctetString, Sequence,
 };
 use std::collections::HashMap;
