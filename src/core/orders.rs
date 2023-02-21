@@ -1,12 +1,12 @@
 use bit_field::BitField;
 use bitflags::bitflags;
 
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use std::io::{Cursor, Read, Write};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use std::io::{Cursor, Read};
 
-use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use log::debug;
-use num_enum::{FromPrimitive, TryFromPrimitive};
+use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 
 const BITMAPCACHE_WAITING_LIST_INDEX: u16 = 0x7FFF;
@@ -85,6 +85,7 @@ pub struct CacheBitmapCompressedRev2 {
 
 // TODO:
 #[derive(Default, Debug)]
+#[allow(dead_code)]
 pub struct CacheColorTable {
     cache_index: u8,
 }
