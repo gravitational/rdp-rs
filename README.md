@@ -149,8 +149,8 @@ Now you want to send an input, a mouse for example :
 client.write(RdpEvent::Pointer(
     // Send a mouse click down at 100x100
     PointerEvent {
-        x: 100 as u16,
-        y: 100 as u16,
+        x: 100_u16,
+        y: 100_u16,
         button: PointerButton::Left,
         down: true
     }

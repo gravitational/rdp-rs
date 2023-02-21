@@ -16,6 +16,7 @@ pub enum Payload {
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/68b5ee54-d0d5-4d65-8d81-e1c4025f7597
 #[derive(Copy, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum Action {
     FastPathActionFastPath = 0x0,
     FastPathActionX224 = 0x3,
@@ -27,7 +28,7 @@ pub enum Action {
 fn tpkt_header(size: u16) -> Component {
     component![
         "action" => Action::FastPathActionX224 as u8,
-        "flag" => 0 as u8,
+        "flag" => 0_u8,
         "size" => U16::BE(size + 4)
     ]
 }
@@ -167,18 +168,16 @@ impl<S: Read + Write> Client<S> {
                         Cursor::new(self.transport.read(length as usize - 3)?),
                     ))
                 }
+            } else if short_length < 2 {
+                Err(Error::RdpError(RdpError::new(
+                    RdpErrorKind::InvalidSize,
+                    "Invalid minimal size for TPKT",
+                )))
             } else {
-                if short_length < 2 {
-                    Err(Error::RdpError(RdpError::new(
-                        RdpErrorKind::InvalidSize,
-                        "Invalid minimal size for TPKT",
-                    )))
-                } else {
-                    Ok(Payload::FastPath(
-                        sec_flag,
-                        Cursor::new(self.transport.read(short_length as usize - 2)?),
-                    ))
-                }
+                Ok(Payload::FastPath(
+                    sec_flag,
+                    Cursor::new(self.transport.read(short_length as usize - 2)?),
+                ))
             }
         }
     }
