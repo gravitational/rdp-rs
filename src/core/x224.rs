@@ -1,7 +1,7 @@
-use core::tpkt;
-use model::data::{Check, Component, DataType, Message, Trame, U16, U32};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use nla::sspi::AuthenticationProtocol;
+use crate::core::tpkt;
+use crate::model::data::{Check, Component, DataType, Message, Trame, U16, U32};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::nla::sspi::AuthenticationProtocol;
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use std::io::{Read, Write};

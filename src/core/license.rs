@@ -1,14 +1,16 @@
-use core::mcs;
-use core::tpkt;
-use model::data::{Check, Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use model::rnd::random;
+use crate::core::mcs;
+use crate::core::tpkt;
+use crate::model::data::{
+    Check, Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32,
+};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::rnd::random;
 use num_enum::TryFromPrimitive;
 use std::convert::{TryFrom, TryInto};
 use std::ffi::CString;
 use std::io::{self, Cursor, Read, Write};
 
-use core::sec::SecurityFlag;
+use crate::core::sec::SecurityFlag;
 
 use md5::Digest;
 use num_bigint::BigUint;
@@ -16,7 +18,7 @@ use rc4::{Key, Rc4};
 use rc4::{KeyInit, StreamCipher};
 use ring::digest;
 use rsa::{PublicKeyParts, RsaPublicKey};
-use x509_parser::{certificate::X509Certificate, prelude::*};
+use x509_parser::{certificate::X509Certificate, prelude::FromDer};
 
 const SIGNATURE_ALG_RSA: u32 = 0x00000001;
 const KEY_EXCHANGE_ALG_RSA: u32 = 0x00000001;

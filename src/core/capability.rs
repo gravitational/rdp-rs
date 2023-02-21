@@ -1,8 +1,8 @@
-use core::gcc::{KeyboardLayout, KeyboardType};
-use model::data::{
+use crate::core::gcc::{KeyboardLayout, KeyboardType};
+use crate::model::data::{
     to_vec, Check, Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32,
 };
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use std::io::Cursor;

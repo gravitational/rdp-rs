@@ -1,15 +1,15 @@
-use core::capability;
-use core::capability::{capability_set, Capability};
-use core::event::{
+use crate::core::capability;
+use crate::core::capability::{capability_set, Capability};
+use crate::core::event::{
     BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, PointerWheel, RdpEvent,
 };
-use core::gcc::KeyboardLayout;
-use core::mcs;
-use core::tpkt;
-use model::data::{
+use crate::core::gcc::KeyboardLayout;
+use crate::core::mcs;
+use crate::core::tpkt;
+use crate::model::data::{
     to_vec, Array, Check, Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32,
 };
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use std::fmt;

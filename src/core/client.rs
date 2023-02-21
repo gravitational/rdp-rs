@@ -1,13 +1,13 @@
-use core::event::RdpEvent;
-use core::gcc::KeyboardLayout;
-use core::global;
-use core::mcs;
-use core::sec;
-use core::tpkt;
-use core::x224;
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use model::link::{Link, Stream};
-use nla::ntlm::Ntlm;
+use crate::core::event::RdpEvent;
+use crate::core::gcc::KeyboardLayout;
+use crate::core::global;
+use crate::core::mcs;
+use crate::core::sec;
+use crate::core::tpkt;
+use crate::core::x224;
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::link::{Link, Stream};
+use crate::nla::ntlm::Ntlm;
 use std::io::{Read, Write};
 
 impl From<&str> for KeyboardLayout {

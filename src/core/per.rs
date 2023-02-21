@@ -1,5 +1,5 @@
-use model::data::{Message, Trame, U16, U32};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::data::{Message, Trame, U16, U32};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::io::{Read, Write};
 
 /// PER encoding length

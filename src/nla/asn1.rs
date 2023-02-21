@@ -1,5 +1,5 @@
+use crate::model::error::{Error, RdpResult};
 use indexmap::map::IndexMap;
-use model::error::{Error, RdpResult};
 use yasna::{BERReader, DERWriter, Tag};
 
 /// Enum all possible value

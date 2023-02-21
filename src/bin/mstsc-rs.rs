@@ -1,13 +1,3 @@
-extern crate clap;
-extern crate hex;
-extern crate hmac;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-extern crate libc;
-extern crate minifb;
-extern crate rdp;
-#[cfg(target_os = "windows")]
-extern crate winapi;
-
 use clap::{App, Arg, ArgMatches};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use libc::{fd_set, select, FD_SET};

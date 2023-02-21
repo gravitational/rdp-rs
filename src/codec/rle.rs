@@ -1,5 +1,5 @@
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use byteorder::{LittleEndian, ReadBytesExt};
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::io::{Cursor, Read};
 
 fn process_plane(

@@ -8,7 +8,7 @@ use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 
 /// Marks all server certificates as valid
 /// so it can be used to turn off the server certificate
