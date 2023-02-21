@@ -12,6 +12,7 @@ use model::data::{
 use model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
+use std::fmt;
 use std::io::{Cursor, Read, Write};
 
 use super::gcc::HighColor;
@@ -19,6 +20,7 @@ use super::gcc::HighColor;
 /// Raw PDU type use by the protocol
 #[repr(u16)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, TryFromPrimitive)]
+#[allow(clippy::enum_variant_names)]
 enum PDUType {
     PdutypeDemandactivepdu = 0x11,
     PdutypeConfirmactivepdu = 0x13,
@@ -30,6 +32,7 @@ enum PDUType {
 /// PDU type available
 /// Most of them are used for initial handshake
 /// Then once connected only Data are send and received
+#[allow(clippy::upper_case_acronyms)]
 struct PDU {
     pub pdu_type: PDUType,
     pub message: Component,
@@ -97,8 +100,9 @@ fn ts_confirm_active_pdu(
     source: Option<Vec<u8>>,
     capabilities_set: Option<Array<Component>>,
 ) -> PDU {
-    let default_capabilities_set = capabilities_set.unwrap_or(Array::new(|| capability_set(None)));
-    let default_source = source.unwrap_or(vec![]);
+    let default_capabilities_set =
+        capabilities_set.unwrap_or_else(|| Array::new(|| capability_set(None)));
+    let default_source = source.unwrap_or_default();
     PDU {
         pdu_type: PDUType::PdutypeConfirmactivepdu,
         message: component![
@@ -134,13 +138,13 @@ fn share_data_header(
     pdu_type_2: Option<PDUType2>,
     message: Option<Vec<u8>>,
 ) -> PDU {
-    let default_message = message.unwrap_or(vec![]);
+    let default_message = message.unwrap_or_default();
     PDU {
         pdu_type: PDUType::PdutypeDatapdu,
         message: component![
             "shareId" => U32::LE(share_id.unwrap_or(0)),
-            "pad1" => 0 as u8,
-            "streamId" => 1 as u8,
+            "pad1" => 0_u8,
+            "streamId" => 1_u8,
             "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), |size| {
                 MessageOption::Size(
                     "payload".to_string(),
@@ -148,7 +152,7 @@ fn share_data_header(
                 )
             }),
             "pduType2" => pdu_type_2.unwrap_or(PDUType2::Pdutype2ArcStatusPdu) as u8,
-            "compressedType" => 0 as u8,
+            "compressedType" => 0_u8,
             "compressedLength" => U16::LE(0),
             "payload" => default_message
         ],
@@ -162,7 +166,7 @@ fn share_control_header(
     pdu_source: Option<u16>,
     message: Option<Vec<u8>>,
 ) -> Component {
-    let default_message = message.unwrap_or(vec![]);
+    let default_message = message.unwrap_or_default();
     component![
         "totalLength" => DynOption::new(U16::LE(default_message.length() as u16 + 6), |total| MessageOption::Size("pduMessage".to_string(), total.inner() as usize - 6)),
         "pduType" => U16::LE(pdu_type.unwrap_or(PDUType::PdutypeDemandactivepdu) as u16),
@@ -281,56 +285,58 @@ pub enum ServerError {
 }
 
 impl ServerError {
-    pub fn to_string(&self) -> String {
-        match self {
-            ServerError::None => "".to_string(),
-            ServerError::RpcInitiatedDisconnect => "The disconnection was initiated by an administrative tool on the server in another session.".to_string(),
-            ServerError::RpcInitiatedLogoff => "The disconnection was due to a forced logoff initiated by an adminitrative tool on the server in another session.".to_string(),
-            ServerError::IdleTimeout => "The idle session limit timer on the server has elapsed.".to_string(),
-            ServerError::LogonTimeout => "The active session limit timer ont he server has elapsed.".to_string(),
-            ServerError::DisconnectedByOtherConnection => "Another user connected to the server, forcing the disconnection of the current connection.".to_string(),
-            ServerError::OutOfMemory => "The server ran out of available memory resources.".to_string(),
-            ServerError::ServerDeniedConnection => "The server denied the connection.".to_string(),
-            ServerError::InsufficientPrivileges => "The user cannot connect to the server due to insufficient access privileges.".to_string(),
-            ServerError::FreshCredentialsRequired => "The server does not accept saved user credentials and requires that the user enter their credentials for each connection.".to_string(),
-            ServerError::RpcInitiatedDisconnectByUser => "The disconnection was initiated by an administrative tool on the server running in the user's session.".to_string(),
-            ServerError::LogoffByUser => "The disconnection was initiated by the user logging off on the server.".to_string(),
-            ServerError::CloseStackOnDriverNotReady => "The display driver in the remote session did not report any status within the time allotted for startup.".to_string(),
-            ServerError::ServerDwmCrash => "The DWM process running in the remote session terminated unexcpectedly.".to_string(),
-            ServerError::CloseStackOnDriverFailure => "The display driver in the remote session was unable to complete all the tasks required for startup.".to_string(),
-            ServerError::CloseStackOnDriverIfaceFailure => "The display drdiver in the remote session started up successfully, but due to internal failures was not usable by the remoting stack.".to_string(),
-            ServerError::WinlogonCrash => "The Winlogon process running in the remote session terminated unexpectedly.".to_string(),
-            ServerError::CsrssCrash => "The CSRSS process running in the remote session terminated unexpectedly.".to_string(),
-            ServerError::ServerShutdown => "The remote server is busy shutting down.".to_string(),
-            ServerError::ServerReboot => "The remote server is busy rebooting.".to_string(),
-            ServerError::LicenseInternal => "An internal error has occurred in the Terminal Services licensing component.".to_string(),
-            ServerError::NoLicenseServer => "A remote desktop license server could not be found to provide a license.".to_string(),
-            ServerError::NoLicense => "There are no Client Access Licenses available for the target remote computer.".to_string(),
-            ServerError::LicenseBadClientMsg => "The remote computer received an invalid licensing message from the client.".to_string(),
-            ServerError::LicenseHWwidDoesntMatch => "The Client Access License stored by the client has been modified.".to_string(),
-            ServerError::BadClientLicense => "The client Access License stored by the client is in an invalid format.".to_string(),
-            ServerError::LicenseCantFinishProtocol => "Network problems have caused the licensing protocol to be terminated.".to_string(),
-            ServerError::LicenseClientEndedProtocol => "The client prematurely ended the licensing protocol.".to_string(),
-            ServerError::LicenseBadClientEncryption => "A licensing message was incorrectly encrypted.".to_string(),
-            ServerError::LicenseCantUpgrade => "The Client Access License stored by the client could not be upgraded or renewed.".to_string(),
-            ServerError::LicenseNoRemoteConnections => "The remote computer is not licensed to accept remote connections.".to_string(),
-        }
-    }
-
     /// Some ServerErrors are really errors, whereas others are moreso
     /// non-error reasons the server disconnected. This function returns
     /// true for the former, false for the latter.
     pub fn is_error(&self) -> bool {
-        match self {
+        matches!(
+            self,
             ServerError::None
-            | ServerError::RpcInitiatedDisconnect
-            | ServerError::RpcInitiatedLogoff
-            | ServerError::IdleTimeout
-            | ServerError::LogonTimeout
-            | ServerError::FreshCredentialsRequired
-            | ServerError::RpcInitiatedDisconnectByUser
-            | ServerError::LogoffByUser => false,
-            _ => true,
+                | ServerError::RpcInitiatedDisconnect
+                | ServerError::RpcInitiatedLogoff
+                | ServerError::IdleTimeout
+                | ServerError::LogonTimeout
+                | ServerError::FreshCredentialsRequired
+                | ServerError::RpcInitiatedDisconnectByUser
+                | ServerError::LogoffByUser
+        )
+    }
+}
+
+impl fmt::Display for ServerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ServerError::None => write!(f, ""),
+            ServerError::RpcInitiatedDisconnect => write!(f, "The disconnection was initiated by an administrative tool on the server in another session."),
+            ServerError::RpcInitiatedLogoff => write!(f, "The disconnection was due to a forced logoff initiated by an adminitrative tool on the server in another session."),
+            ServerError::IdleTimeout => write!(f, "The idle session limit timer on the server has elapsed."),
+            ServerError::LogonTimeout => write!(f, "The active session limit timer ont he server has elapsed."),
+            ServerError::DisconnectedByOtherConnection => write!(f, "Another user connected to the server, forcing the disconnection of the current connection."),
+            ServerError::OutOfMemory => write!(f, "The server ran out of available memory resources."),
+            ServerError::ServerDeniedConnection => write!(f, "The server denied the connection."),
+            ServerError::InsufficientPrivileges => write!(f, "The user cannot connect to the server due to insufficient access privileges."),
+            ServerError::FreshCredentialsRequired => write!(f, "The server does not accept saved user credentials and requires that the user enter their credentials for each connection."),
+            ServerError::RpcInitiatedDisconnectByUser => write!(f, "The disconnection was initiated by an administrative tool on the server running in the user's session."),
+            ServerError::LogoffByUser => write!(f, "The disconnection was initiated by the user logging off on the server."),
+            ServerError::CloseStackOnDriverNotReady => write!(f, "The display driver in the remote session did not report any status within the time allotted for startup."),
+            ServerError::ServerDwmCrash => write!(f, "The DWM process running in the remote session terminated unexcpectedly."),
+            ServerError::CloseStackOnDriverFailure => write!(f, "The display driver in the remote session was unable to complete all the tasks required for startup."),
+            ServerError::CloseStackOnDriverIfaceFailure => write!(f, "The display drdiver in the remote session started up successfully, but due to internal failures was not usable by the remoting stack."),
+            ServerError::WinlogonCrash => write!(f, "The Winlogon process running in the remote session terminated unexpectedly."),
+            ServerError::CsrssCrash => write!(f, "The CSRSS process running in the remote session terminated unexpectedly."),
+            ServerError::ServerShutdown => write!(f, "The remote server is busy shutting down."),
+            ServerError::ServerReboot => write!(f, "The remote server is busy rebooting."),
+            ServerError::LicenseInternal => write!(f, "An internal error has occurred in the Terminal Services licensing component."),
+            ServerError::NoLicenseServer => write!(f, "A remote desktop license server could not be found to provide a license."),
+            ServerError::NoLicense => write!(f, "There are no Client Access Licenses available for the target remote computer."),
+            ServerError::LicenseBadClientMsg => write!(f, "The remote computer received an invalid licensing message from the client."),
+            ServerError::LicenseHWwidDoesntMatch => write!(f, "The Client Access License stored by the client has been modified."),
+            ServerError::BadClientLicense => write!(f, "The client Access License stored by the client is in an invalid format."),
+            ServerError::LicenseCantFinishProtocol => write!(f, "Network problems have caused the licensing protocol to be terminated."),
+            ServerError::LicenseClientEndedProtocol => write!(f, "The client prematurely ended the licensing protocol."),
+            ServerError::LicenseBadClientEncryption => write!(f, "A licensing message was incorrectly encrypted."),
+            ServerError::LicenseCantUpgrade => write!(f, "The Client Access License stored by the client could not be upgraded or renewed."),
+            ServerError::LicenseNoRemoteConnections => write!(f, "The remote computer is not licensed to accept remote connections."),
         }
     }
 }
@@ -410,6 +416,7 @@ fn ts_set_error_info_pdu() -> DataPDU {
 
 #[repr(u16)]
 #[allow(dead_code)]
+#[allow(clippy::enum_variant_names)]
 enum Action {
     CtrlactionRequestControl = 0x0001,
     CtrlactionGrantedControl = 0x0002,
@@ -448,7 +455,7 @@ fn ts_font_map_pdu() -> DataPDU {
 
 /// Send input event as slow path
 fn ts_input_pdu_data(events: Option<Array<Component>>) -> DataPDU {
-    let default_events = events.unwrap_or(Array::new(|| ts_input_event(None, None)));
+    let default_events = events.unwrap_or_else(|| Array::new(|| ts_input_event(None, None)));
     DataPDU {
         pdu_type: PDUType2::Pdutype2Input,
         message: component![
@@ -464,7 +471,7 @@ fn ts_input_event(message_type: Option<InputEventType>, data: Option<Vec<u8>>) -
     component![
         "eventTime" => U32::LE(0),
         "messageType" => U16::LE(message_type.unwrap_or(InputEventType::InputEventMouse) as u16),
-        "slowPathInputData" => data.unwrap_or(vec![])
+        "slowPathInputData" => data.unwrap_or_default()
     ]
 }
 
@@ -538,7 +545,7 @@ impl From<PointerEvent> for TSInputEvent {
         let abs_wheel_delta = if pointer.wheel_delta.abs() > 0xFF {
             0xFF
         } else {
-            pointer.wheel_delta.abs() as u16
+            pointer.wheel_delta.unsigned_abs()
         };
 
         // If the wheel_delta is negative, take the 9-bit two's complement and add the appropriate flag.
@@ -599,15 +606,15 @@ pub fn ts_keyboard_event(flags: Option<u16>, key_code: Option<u16>) -> TSInputEv
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a1c4caa8-00ed-45bb-a06e-5177473766d3
 fn ts_fp_update() -> Component {
     component![
-        "updateHeader" => DynOption::new(0 as u8, |header| {
-            if (header >> 4) & 0x2 as u8 == 0 as u8 {
+        "updateHeader" => DynOption::new(0_u8, |header| {
+            if (header >> 4) & 0x2_u8 == 0_u8 {
                 MessageOption::SkipField("compressionFlags".to_string())
             }
             else {
                 MessageOption::None
             }
         }),
-        "compressionFlags" => 0 as u8,
+        "compressionFlags" => 0_u8,
         "size" => DynOption::new(U16::LE(0), | size | MessageOption::Size("updateData".to_string(), size.inner() as usize)),
         "updateData" => Vec::<u8>::new()
     ]
@@ -709,7 +716,7 @@ fn ts_fp_update_bitmap() -> FastPathUpdate {
         message: component![
             "header" => Check::new(U16::LE(FastPathUpdateType::FastpathUpdatetypeBitmap as u16)),
             "numberRectangles" => U16::LE(0),
-            "rectangles" => Array::new(|| ts_bitmap_data())
+            "rectangles" => Array::new(ts_bitmap_data)
         ],
     }
 }
@@ -729,7 +736,7 @@ fn ts_colorpointerattribute() -> FastPathUpdate {
            "lengthXorMask" => DynOption::new(U16::LE(0), |length| MessageOption::Size("xorMaskData".to_string(), length.inner() as usize)),
            "xorMaskData" => Vec::<u8>::new(),
            "andMaskData" => Vec::<u8>::new(),
-           "pad" => Some(0 as u8)
+           "pad" => Some(0_u8)
         ],
     }
 }
@@ -975,7 +982,7 @@ impl Client {
         T: FnMut(RdpEvent),
     {
         // it could be have one or more fast path payload
-        let mut fp_messages = Array::new(|| ts_fp_update());
+        let mut fp_messages = Array::new(ts_fp_update);
         fp_messages.read(stream)?;
 
         for fp_message in fp_messages.inner().iter() {

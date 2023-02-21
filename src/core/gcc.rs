@@ -127,7 +127,7 @@ pub enum HighColor {
 /// Supported color depth
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::enum_variant_names)]
 enum Support {
     RnsUd24BPPSupport = 0x0001,
     RnsUd16BPPSupport = 0x0002,
@@ -250,13 +250,13 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
     });
 
     let client_name = if client_parameter.name.len() >= 16 {
-        (&client_parameter.name[0..16]).to_string()
+        client_parameter.name[0..16].to_string()
     } else {
         client_parameter.name.clone() + &"\x00".repeat(16 - client_parameter.name.len())
     };
 
     let mut capability_flags = CapabilityFlag::RnsUdCsSupportErrinfoPDU as u16;
-    if let Some(_) = client_parameter.connection_type {
+    if client_parameter.connection_type.is_some() {
         // indicate that we're specifying the connection type
         capability_flags |= CapabilityFlag::RnsUdCsValidConnectionType as u16;
     }
@@ -269,11 +269,11 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "sasSequence" => U16::LE(Sequence::RnsUdSasDel as u16),
         "kbdLayout" => U32::LE(client_parameter.layout as u32),
         "clientBuild" => U32::LE(18363), // Windows 10, Version 1909, same as FreeRDP
-        "clientName" => client_name.to_string().to_unicode(),
+        "clientName" => client_name.to_unicode(),
         "keyboardType" => U32::LE(KeyboardType::Ibm101102Keys as u32),
         "keyboardSubType" => U32::LE(0),
         "keyboardFnKeys" => U32::LE(12),
-        "imeFileName" => vec![0 as u8; 64],
+        "imeFileName" => vec![0_u8; 64],
         "postBeta2ColorDepth" => U16::LE(ColorDepth::RnsUdColor8BPP as u16),
         "clientProductId" => U16::LE(1),
         "serialNumber" => U32::LE(0),
@@ -287,7 +287,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "earlyCapabilityFlags" => U16::LE(capability_flags),
         "clientDigProductId" => vec![0; 64],
         "connectionType" => client_parameter.connection_type.map(|c|c as u8).unwrap_or(0),
-        "pad1octet" => 0 as u8,
+        "pad1octet" => 0_u8,
         "serverSelectedProtocol" => U32::LE(client_parameter.server_selected_protocol)
     ]
 }
@@ -354,7 +354,7 @@ pub fn server_network_data() -> Component {
 pub fn block_header(data_type: Option<MessageType>, length: Option<u16>) -> Component {
     component![
         "type" => U16::LE(data_type.unwrap_or(MessageType::CsCore) as u16),
-        "length" => U16::LE(length.unwrap_or(0) as u16 + 4)
+        "length" => U16::LE(length.unwrap_or(0) + 4)
     ]
 }
 
@@ -402,11 +402,8 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
             break;
         }
 
-        let mut buffer = vec![
-            0 as u8;
-            (cast!(DataType::U16, header["length"])? - header.length() as u16)
-                as usize
-        ];
+        let mut buffer =
+            vec![0_u8; (cast!(DataType::U16, header["length"])? - header.length() as u16) as usize];
         sub.read_exact(&mut buffer)?;
 
         match MessageType::from(cast!(DataType::U16, header["type"])?) {
@@ -445,7 +442,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
             DataType::Trame,
             result[&MessageType::ScNet]["channelIdArray"]
         )?
-        .into_iter()
+        .iter()
         .map(|x| cast!(DataType::U16, x).unwrap())
         .collect(),
         rdp_version: Version::from(cast!(

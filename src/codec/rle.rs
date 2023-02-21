@@ -86,7 +86,7 @@ fn parse_control_byte(control: u8) -> (u8, u8) {
     // the values 1 and 2 are used in the run length field to encode extra long
     // RUN sequences of more than 16 values:
     let revcode = (run_length << 4) | raw_bytes;
-    if (revcode <= 47) && (revcode >= 16) {
+    if (16..=47).contains(&revcode) {
         run_length = revcode;
         raw_bytes = 0;
     }
@@ -102,12 +102,12 @@ fn decode_delta(mut delta: u8) -> i8 {
     if delta & 1 != 0 {
         // If the encoded delta value is odd, then decrement it by 1,
         // shift it 1 bit toward the lowest bit, and subtract it from 255.
-        delta = delta >> 1;
-        delta = delta + 1;
+        delta >>= 1;
+        delta += 1;
         -(delta as i32) as i8
     } else {
         // If the encoded delta value is even, shift it 1 bit toward the lowest bit.
-        delta = delta >> 1;
+        delta >>= 1;
         delta as i8
     }
 }
@@ -297,7 +297,7 @@ pub fn rle_16_decompress(
 
         match opcode {
             0 => {
-                if lastopcode == opcode && !(x == width && prevline == None) {
+                if lastopcode == opcode && !(x == width && prevline.is_none()) {
                     insertmix = true;
                 }
             }
@@ -456,10 +456,10 @@ pub fn rle_16_decompress(
 }
 
 pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
-    let mut result_32_bpp = vec![0 as u8; width as usize * height as usize * 4];
+    let mut result_32_bpp = vec![0_u8; width * height * 4];
     for i in 0..height {
         for j in 0..width {
-            let index = (i * width + j) as usize;
+            let index = i * width + j;
             let v = input[index];
             result_32_bpp[index * 4 + 3] = 0xff;
             result_32_bpp[index * 4 + 2] = (((((v >> 11) & 0x1f) * 527) + 23) >> 6) as u8;
@@ -489,7 +489,7 @@ mod tests {
         let mut input_cursor = Cursor::new(encoded_plane);
 
         // width * height * 4 bytes/pixel
-        let mut output = vec![0 as u8; width as usize * height as usize * 4];
+        let mut output = vec![0_u8; width as usize * height as usize * 4];
         process_plane(&mut input_cursor, width, height, &mut output).expect("decode failed");
 
         // the decoded plane from the MSFT example
@@ -530,7 +530,7 @@ mod tests {
             let mut out = std::fs::read(&name).expect(&format!("reading out {:?}", name));
             set_plane(0xFF, width, height, &mut out[3..]); // set alpha plane to opaque
 
-            let mut result = vec![0 as u8; width as usize * height as usize * 4];
+            let mut result = vec![0_u8; width as usize * height as usize * 4];
             rle_32_decompress(&input, width, height, &mut result).unwrap();
 
             assert_eq!(out.len(), result.len());

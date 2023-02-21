@@ -174,6 +174,7 @@ impl Connector {
     ///     .screen(800, 600)
     ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
     /// ```
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Connector {
             width: 800,
@@ -239,13 +240,7 @@ impl Connector {
 
         // Create MCS layer and connect it
         let mut mcs = mcs::Client::new(x224);
-        mcs.connect(
-            self.name.clone(),
-            self.width,
-            self.height,
-            self.layout,
-            &vec![],
-        )?;
+        mcs.connect(self.name.clone(), self.width, self.height, self.layout, &[])?;
         // state less connection for old secure layer
         if self.restricted_admin_mode {
             sec::connect(

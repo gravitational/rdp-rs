@@ -140,7 +140,7 @@ impl Message for u8 {
     ///     let mut s = Cursor::new(Vec::new());
     ///     let value : u8 = 8;
     ///     value.write(&mut s);
-    ///     assert_eq!(*s.get_ref(), vec![8 as u8]);
+    ///     assert_eq!(*s.get_ref(), vec![8_u8]);
     /// # }
     /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
@@ -156,7 +156,7 @@ impl Message for u8 {
     /// # use std::io::Cursor;
     /// # fn main () {
     ///     let mut stream = Cursor::new(vec![8]);
-    ///     let mut value = 0 as u8;
+    ///     let mut value = 0_u8;
     ///     value.read(&mut stream); // set the value according to stream content
     ///     assert_eq!(value, 8);
     /// # }
@@ -223,7 +223,7 @@ impl Message for u8 {
 /// # extern crate rdp;
 /// # use rdp::model::data::{Trame, U32};
 /// # fn main() {
-///     let t = trame! [0 as u8, U32::BE(4)];
+///     let t = trame! [0_u8, U32::BE(4)];
 /// # }
 /// ```
 pub type Trame = Vec<Box<dyn Message>>;
@@ -236,18 +236,18 @@ pub type Trame = Vec<Box<dyn Message>>;
 /// # extern crate rdp;
 /// # use rdp::model::data::{Trame, U32};
 /// # fn main() {
-///     let t = trame! [0 as u8, U32::BE(4)];
+///     let t = trame! [0_u8, U32::BE(4)];
 /// # }
 /// ```
 #[macro_export]
 macro_rules! trame {
     () => { Trame::new() };
     ($( $val: expr ),*) => {{
-         let mut vec = Trame::new();
-         $( vec.push(Box::new($val)); )*
+         let vec: Trame = vec![$(Box::new($val)),*];
          vec
     }}
 }
+
 /// Trame is a Message too
 impl Message for Trame {
     /// Write a trame to a stream
@@ -264,7 +264,7 @@ impl Message for Trame {
     /// # use std::io::Cursor;
     /// # fn main() {
     ///     let mut s = Cursor::new(Vec::new());
-    ///     let x = trame![0 as u8, U32::LE(2)];
+    ///     let x = trame![0_u8, U32::LE(2)];
     ///     x.write(&mut s);
     ///     assert_eq!(s.into_inner(), [0, 2, 0, 0, 0])
     /// # }
@@ -290,7 +290,7 @@ impl Message for Trame {
     /// # use std::io::Cursor;
     /// # fn main() {
     ///     let mut s = Cursor::new(vec![8, 3, 0, 0, 0]);
-    ///     let mut x = trame![0 as u8, U32::LE(0)];
+    ///     let mut x = trame![0_u8, U32::LE(0)];
     ///     x.read(&mut s);
     ///     assert_eq!(cast!(DataType::U8, x[0]).unwrap(), 8);
     ///     assert_eq!(cast!(DataType::U32, x[1]).unwrap(), 3);
@@ -313,7 +313,7 @@ impl Message for Trame {
     /// # use std::io::Cursor;
     /// # fn main() {
     ///     let mut s = Cursor::new(Vec::new());
-    ///     let x = trame![0 as u8, U32::LE(2)];
+    ///     let x = trame![0_u8, U32::LE(2)];
     ///     x.write(&mut s);
     ///     assert_eq!(x.length(), 5)
     /// # }
@@ -337,7 +337,7 @@ impl Message for Trame {
     /// # use std::io::Cursor;
     /// # fn main() {
     ///     let mut s = Cursor::new(vec![8, 3, 0, 0, 0, 0]);
-    ///     let mut x = trame![trame![0 as u8, U32::LE(0)], 0 as u8];
+    ///     let mut x = trame![trame![0_u8, U32::LE(0)], 0_u8];
     ///     x.read(&mut s);
     ///     let y = cast!(DataType::Trame, x[0]).unwrap();
     ///     assert_eq!(cast!(DataType::U32, y[1]).unwrap(), 3)
@@ -380,7 +380,7 @@ impl Message for Component {
     /// # fn main() {
     ///     let mut s = Cursor::new(vec![]);
     ///     let mut x = component![
-    ///         "field1" => 3 as u8,
+    ///         "field1" => 3_u8,
     ///         "field2" => U32::LE(6)
     ///     ];
     ///     x.write(&mut s);
@@ -415,7 +415,7 @@ impl Message for Component {
     /// # fn main() {
     ///     let mut s = Cursor::new(vec![3, 6, 0, 0, 0]);
     ///     let mut x = component![
-    ///         "field1" => 0 as u8,
+    ///         "field1" => 0_u8,
     ///         "field2" => U32::LE(0)
     ///     ];
     ///     x.read(&mut s);
@@ -464,7 +464,7 @@ impl Message for Component {
     /// # fn main() {
     ///     let mut s = Cursor::new(vec![3, 6, 0, 0, 0]);
     ///     let mut x = component![
-    ///         "field1" => 0 as u8,
+    ///         "field1" => 0_u8,
     ///         "field2" => U32::LE(0)
     ///     ];
     ///     x.read(&mut s);
@@ -500,10 +500,10 @@ impl Message for Component {
     ///     let mut s = Cursor::new(vec![8, 3, 0, 0, 0, 0]);
     ///     let mut x = trame![
     ///         component![
-    ///             "field1" => 0 as u8,
+    ///             "field1" => 0_u8,
     ///             "field2" => U32::LE(0)
     ///         ],
-    ///         0 as u8
+    ///         0_u8
     ///     ];
     ///     x.read(&mut s);
     ///     let y = cast!(DataType::Component, x[0]).unwrap();
@@ -547,7 +547,7 @@ impl<Type: Copy + PartialEq> Value<Type> {
 impl<Type: Copy + PartialEq> PartialEq for Value<Type> {
     /// Equality between all type
     fn eq(&self, other: &Self) -> bool {
-        return self.inner() == other.inner();
+        self.inner() == other.inner()
     }
 }
 
@@ -617,7 +617,7 @@ impl Message for U16 {
     ///     let mut s = Cursor::new(vec![8, 0, 3]);
     ///     let mut x = trame![
     ///         U16::LE(0),
-    ///         0 as u8
+    ///         0_u8
     ///     ];
     ///     x.read(&mut s);
     ///     assert_eq!(cast!(DataType::U16, x[0]).unwrap(), 8)
@@ -699,7 +699,7 @@ impl Message for U32 {
     ///     let mut s = Cursor::new(vec![8, 0, 0, 0, 3]);
     ///     let mut x = trame![
     ///         U32::LE(0),
-    ///         0 as u8
+    ///         0_u8
     ///     ];
     ///     x.read(&mut s);
     ///     assert_eq!(cast!(DataType::U32, x[0]).unwrap(), 8)
@@ -789,7 +789,7 @@ impl<T: Message + Clone + PartialEq> Message for Check<T> {
     ///     let mut s = Cursor::new(vec![8, 0, 0, 0, 3]);
     ///     let mut x = trame![
     ///         Check::new(U32::LE(8)),
-    ///         0 as u8
+    ///         0_u8
     ///     ];
     ///     x.read(&mut s);
     ///     assert_eq!(cast!(DataType::U32, x[0]).unwrap(), 8)
@@ -812,7 +812,7 @@ impl Message for Vec<u8> {
     }
 
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
-        if self.len() == 0 {
+        if self.is_empty() {
             reader.read_to_end(self)?;
         } else {
             reader.read_exact(self)?;
@@ -997,9 +997,10 @@ impl<T: Message> Message for Option<T> {
     /// assert_eq!(s2.into_inner(), [])
     /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
-        Ok(if let Some(value) = self {
+        if let Some(value) = self {
             value.write(writer)?
-        })
+        };
+        Ok(())
     }
 
     /// Read an optional field
@@ -1215,7 +1216,7 @@ mod test {
     #[test]
     fn test_data_u8_write() {
         let mut stream = Cursor::new(Vec::<u8>::new());
-        let x = 1 as u8;
+        let x = 1_u8;
         x.write(&mut stream).unwrap();
         assert_eq!(stream.get_ref().as_slice(), [1])
     }

@@ -6,6 +6,7 @@ use super::tls::{Certificate, TlsStream};
 
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
+#[allow(clippy::large_enum_variant)]
 pub enum Stream<S> {
     /// Raw stream that implement Read + Write
     Raw(S),
