@@ -8,15 +8,18 @@ use crate::core::mcs;
 use crate::core::tpkt;
 use crate::core::orders::*;
 use crate::model::data::{
-    to_vec, Array, Check, Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32,
+    to_vec, Array, Check, Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32, self,
 };
 use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use num_enum::TryFromPrimitive;
+use bit_field::BitField;
+use num_enum::{TryFromPrimitive, IntoPrimitive};
 use std::convert::TryFrom;
 use std::fmt;
 use std::io::{Cursor, Read, Write};
 
 use super::gcc::HighColor;
+
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 
 /// Raw PDU type use by the protocol
 #[repr(u16)]
@@ -602,10 +605,66 @@ pub fn ts_keyboard_event(flags: Option<u16>, key_code: Option<u16>) -> TSInputEv
     }
 }
 
+
+
+pub struct NewFastPathUpdate<'a> {
+    code: NewFastPathUpdateCode,
+    fragmentation: NewFastPathFragmentation,
+    data: &'a [u8],
+}
+
+
+impl <'a> NewFastPathUpdate<'a> {
+    pub fn from_buffer(buf: &mut &'a [u8]) -> Self {
+        let header = buf.read_u8().unwrap();
+        let code = NewFastPathUpdateCode::try_from(header.get_bits(0..4)).unwrap();
+        let fragmentation = NewFastPathFragmentation::try_from(header.get_bits(4..6)).unwrap();
+
+        let data_length = buf.read_u16::<LittleEndian>().unwrap();
+        // check length so it won't panic
+        let (data, remaining) = buf.split_at(data_length as usize);
+        *buf = remaining;
+
+        Self {
+            code,
+            fragmentation,
+            data,
+        }
+    }
+
+    fn to_buffer(self, mut buf: &mut [u8]) {
+        let mut header = 0_u8;
+        header.set_bits(0..4, self.code as u8);
+        header.set_bits(4..6, self.fragmentation as u8);
+
+        buf.write_u8(header).unwrap();
+        buf.write_u16::<LittleEndian>(self.data.len() as u16).unwrap();
+        buf.write_all(self.data).unwrap();
+    }
+
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[repr(u8)]
+pub enum NewFastPathUpdateCode {
+    Orders = 0x0,
+    Bitmap = 0x1,
+    Palette = 0x2,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[repr(u8)]
+pub enum NewFastPathFragmentation {
+    Single = 0x0,
+    Last = 0x1,
+    First = 0x2,
+    Next = 0x3,
+}
+
 /// Fast Path update (Not a PDU)
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a1c4caa8-00ed-45bb-a06e-5177473766d3
-fn ts_fp_update() -> Component {
+pub fn ts_fp_update() -> Component {
     component![
         "updateHeader" => DynOption::new(0_u8, |header| {
             if (header >> 4) & 0x2_u8 == 0_u8 {
@@ -1403,5 +1462,46 @@ mod test {
         ]);
         let mut global = Client::new(0, 0, 800, 600, KeyboardLayout::US, "foo");
         assert!(global.read_font_map_pdu(&mut stream).unwrap())
+    }
+
+
+    #[test]
+    fn test_new_fast_path() {
+        let data = vec![1; 256];
+
+        let fp = NewFastPathUpdate {
+            code: NewFastPathUpdateCode::Bitmap,
+            fragmentation: NewFastPathFragmentation::First,
+            data: &data,
+        };
+
+        let mut buf = vec![0; 512];
+
+        fp.to_buffer(&mut buf);
+
+        assert_eq!(buf[258], 1);
+        assert_eq!(buf[259], 0);
+
+        // let raw = [
+            // 0x
+        // ]
+        let mut st: Vec<u8> = vec![
+            0x1, // header
+            0xf, 0x0, // data length
+            0x1, 0x1, 0x1, 0x1,
+            0x2, 0x2, 0x2, 0x2,
+            0x3, 0x3, 0x3, 0x3,
+            0x4, 0x4, 0x4, 0x4,
+            0x4, 0x3, 0x2, 0x1,
+            0x0, 0x0, 0x0, 0x1,
+        ];
+        let raw = &mut st;
+        // let ff = NewFastPathUpdate::from_buffer(&mut &raw[..]);
+
+        let mut old = ts_fp_update();
+        old.read(&mut &raw[..]).unwrap();
+
+        print!("SD");
+
     }
 }
