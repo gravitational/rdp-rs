@@ -102,6 +102,9 @@ impl<S: Read + Write> RdpClient<S> {
             }
             // Raw keyboard input
             RdpEvent::Key(key) => self.global.write_input_event(key.into(), &mut self.mcs),
+            // Input sync
+            RdpEvent::Sync(sync) => self.global.write_input_event(sync.into(), &mut self.mcs),
+
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::UnexpectedType,
                 "RDPCLIENT: This event can't be sent",

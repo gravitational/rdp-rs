@@ -1,7 +1,7 @@
 use crate::core::capability;
 use crate::core::capability::{capability_set, Capability};
 use crate::core::event::{
-    BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, PointerWheel, RdpEvent,
+    BitmapEvent, InputSyncEvent, KeyboardEvent, PointerButton, PointerEvent, PointerWheel, RdpEvent,
 };
 use crate::core::gcc::KeyboardLayout;
 use crate::core::mcs;
@@ -598,6 +598,34 @@ pub fn ts_keyboard_event(flags: Option<u16>, key_code: Option<u16>) -> TSInputEv
             "keyCode" => U16::LE(key_code.unwrap_or(0)),
             "pad2Octets" => U16::LE(0)
         ],
+    }
+}
+
+#[repr(u32)]
+pub enum InputSyncFlags {
+    TsSyncScrollLock = 0x00000001,
+    TsSyncNumLock = 0x00000002,
+    TsSyncCapsLock = 0x00000004,
+    TsSyncKanaLock = 0x00000008,
+}
+
+/// The TS_SYNC_EVENT is used to synchronize the value of the toggle keys
+/// and to reset the server state to "all keys up."
+///
+/// See https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/6c5d0ef9-4653-4d69-9ba9-09ba3acd660f
+pub fn ts_sync_event(toggle_flags: Option<u32>) -> TSInputEvent {
+    TSInputEvent {
+        event_type: InputEventType::InputEventSync,
+        message: component![
+            "pad2Octets" => U16::LE(0),
+            "toggleFlags" => U32::LE(toggle_flags.unwrap_or(0))
+        ],
+    }
+}
+
+impl From<InputSyncEvent> for TSInputEvent {
+    fn from(evt: InputSyncEvent) -> Self {
+        ts_sync_event(Some(evt.flags))
     }
 }
 
