@@ -1,7 +1,7 @@
+use crate::model::error::{Error, RdpResult};
 use boring::fips;
 use boring::ssl::{self, SslConnector, SslMethod, SslStream, SslVerifyMode};
 use boring::x509::X509;
-use model::error::{Error, RdpResult};
 use std::fmt;
 use std::io::{self, Read, Write};
 
