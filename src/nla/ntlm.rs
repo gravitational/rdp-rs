@@ -884,10 +884,7 @@ mod test {
     /// Test of the unicode function
     #[test]
     fn test_unicode() {
-        assert_eq!(
-            unicode(&"foo".to_string()),
-            [0x66, 0x00, 0x6f, 0x00, 0x6f, 0x00]
-        )
+        assert_eq!(unicode("foo"), [0x66, 0x00, 0x6f, 0x00, 0x6f, 0x00])
     }
 
     /// Test HMAC_MD5 function
@@ -906,11 +903,7 @@ mod test {
     #[test]
     fn test_ntowfv2() {
         assert_eq!(
-            ntowfv2(
-                &"foo".to_string(),
-                &"user".to_string(),
-                &"domain".to_string()
-            ),
+            ntowfv2("foo", "user", "domain"),
             [
                 0x6e, 0x53, 0xb9, 0x0, 0x97, 0x8c, 0x87, 0x1f, 0x91, 0xde, 0x6, 0x44, 0x9d, 0x8b,
                 0x8b, 0x81
@@ -922,16 +915,8 @@ mod test {
     #[test]
     fn test_lmowfv2() {
         assert_eq!(
-            lmowfv2(
-                &"foo".to_string(),
-                &"user".to_string(),
-                &"domain".to_string()
-            ),
-            ntowfv2(
-                &"foo".to_string(),
-                &"user".to_string(),
-                &"domain".to_string()
-            )
+            lmowfv2("foo", "user", "domain"),
+            ntowfv2("foo", "user", "domain")
         )
     }
 

@@ -963,9 +963,9 @@ mod tests {
     fn test_generate_salted_hash() {
         let result = SessionEncryptionData::salted_hash(
             b"A",
-            &PREMASTER_SECRET_BUFFER.as_ref(),
-            &CLIENT_RANDOM_BUFFER.as_ref(),
-            &SERVER_RANDOM_BUFFER.as_ref(),
+            PREMASTER_SECRET_BUFFER.as_ref(),
+            CLIENT_RANDOM_BUFFER.as_ref(),
+            SERVER_RANDOM_BUFFER.as_ref(),
         );
         assert_eq!(result, SALTED_HASH_BUFFER.as_ref());
     }
@@ -1004,7 +1004,7 @@ mod tests {
         );
 
         let encrypted = session_encryption
-            .encrypt_message(&PREMASTER_SECRET_BUFFER.to_vec())
+            .encrypt_message(PREMASTER_SECRET_BUFFER.as_ref())
             .unwrap();
         assert_eq!(encrypted, ENCRYPTED_PREMASTER_SECRET.as_ref());
     }

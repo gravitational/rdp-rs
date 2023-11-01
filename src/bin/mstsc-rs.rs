@@ -3,7 +3,9 @@ use clap::{App, Arg, ArgMatches};
 use libc::{fd_set, select, FD_SET};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use rdp::core::client::{Connector, RdpClient};
-use rdp::core::event::{BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, RdpEvent};
+use rdp::core::event::{
+    BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, PointerWheel, RdpEvent,
+};
 use rdp::core::gcc::KeyboardLayout;
 use rdp::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::convert::TryFrom;
@@ -462,6 +464,8 @@ fn main_gui_loop<S: Read + Write>(
                 } else {
                     PointerButton::try_from(last_button as u8 | current_button as u8).unwrap()
                 },
+                wheel: PointerWheel::None,
+                wheel_delta: 0,
                 down: (last_button != current_button) && last_button == PointerButton::None,
             }))?;
 

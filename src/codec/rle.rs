@@ -259,7 +259,7 @@ pub fn rle_16_decompress(
         opcode = code >> 4;
 
         match opcode {
-            0xC | 0xD | 0xE => {
+            12..=14 => {
                 opcode -= 6;
                 count = (code & 0xf) as u16;
                 offset = 16;
@@ -524,10 +524,10 @@ mod tests {
 
             let (width, height) = (64u32, 64u32);
 
-            let input = std::fs::read(&name).expect(&format!("reading in {:?}", name));
+            let input = std::fs::read(&name).unwrap_or_else(|_| panic!("reading in {:?}", name));
 
-            assert_eq!(true, name.set_extension("out"));
-            let mut out = std::fs::read(&name).expect(&format!("reading out {:?}", name));
+            assert!(name.set_extension("out"));
+            let mut out = std::fs::read(&name).unwrap_or_else(|_| panic!("reading out {:?}", name));
             set_plane(0xFF, width, height, &mut out[3..]); // set alpha plane to opaque
 
             let mut result = vec![0_u8; width as usize * height as usize * 4];
