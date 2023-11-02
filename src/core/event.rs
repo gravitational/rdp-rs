@@ -169,6 +169,12 @@ pub struct KeyboardEvent {
     pub down: bool,
 }
 
+#[derive(Debug)]
+pub struct InputSyncEvent {
+    /// Indicates which of the toggle keys are active.
+    pub flags: u32,
+}
+
 /// All event handle by RDP protocol implemented by rdp-rs
 #[derive(Debug)]
 pub enum RdpEvent {
@@ -178,4 +184,6 @@ pub enum RdpEvent {
     Pointer(PointerEvent),
     /// Keyboard event
     Key(KeyboardEvent),
+    /// Input sync event
+    Sync(InputSyncEvent),
 }
