@@ -73,7 +73,7 @@ pub enum MessageType {
 /// Error code of the license automata
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f18b6c9f-f3d8-4a0e-8398-f9b153233dca?redirectedfrom=MSDN
 #[repr(u32)]
-#[derive(PartialEq, Eq, TryFromPrimitive)]
+#[derive(Debug, PartialEq, Eq, TryFromPrimitive)]
 pub enum ErrorCode {
     ErrInvalidServerCertificate = 0x00000001,
     ErrNoLicense = 0x00000002,
@@ -90,7 +90,7 @@ pub enum ErrorCode {
 /// for license automata
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f18b6c9f-f3d8-4a0e-8398-f9b153233dca
 #[repr(u32)]
-#[derive(PartialEq, Eq, TryFromPrimitive)]
+#[derive(Debug, PartialEq, Eq, TryFromPrimitive)]
 pub enum StateTransition {
     StTotalAbort = 0x00000001,
     StNoTransition = 0x00000002,
@@ -492,25 +492,25 @@ pub struct ServerLicenseRequest {
 impl ServerLicenseRequest {
     fn from_bytes(raw: &mut dyn Read) -> RdpResult<Self> {
         let mut message = component![
-                "ServerRandom" => vec![0; 32],
-                "dwVersion" => U32::LE(0),
-                "cbCompanyName" => DynOption::new(U32::LE(0), | size | MessageOption::Size("pbCompanyName".to_string(), size.inner() as usize)),
-                "pbCompanyName" => Vec::<u8>::new(),
-                "cbProductId" => DynOption::new(U32::LE(0), | size | MessageOption::Size("pbProductId".to_string(), size.inner() as usize)),
-                "pbProductId" => Vec::<u8>::new(),
-                "KeyExchangeList" => component![
-                    "wBlobType" => U16::LE(0),
-                    "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
-                    "blobData" => Vec::<u8>::new()
-                ],
-                "ServerCertificate" => component![
-                    "wBlobType" => U16::LE(0),
-                    "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
-                    "blobData" => Vec::<u8>::new()
-        ],
-                "ScopeCount" => DynOption::new(U32::LE(0), | size | MessageOption::Size("ScopeArray".to_string(), size.inner() as usize)),
-                "ScopeArray" => Vec::<u8>::new()
-            ];
+            "ServerRandom" => vec![0; 32],
+            "dwVersion" => U32::LE(0),
+            "cbCompanyName" => DynOption::new(U32::LE(0), | size | MessageOption::Size("pbCompanyName".to_string(), size.inner() as usize)),
+            "pbCompanyName" => Vec::<u8>::new(),
+            "cbProductId" => DynOption::new(U32::LE(0), | size | MessageOption::Size("pbProductId".to_string(), size.inner() as usize)),
+            "pbProductId" => Vec::<u8>::new(),
+            "KeyExchangeList" => component![
+                "wBlobType" => U16::LE(0),
+                "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
+                "blobData" => Vec::<u8>::new()
+            ],
+            "ServerCertificate" => component![
+                "wBlobType" => U16::LE(0),
+                "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
+                "blobData" => Vec::<u8>::new()
+            ],
+            "ScopeCount" => DynOption::new(U32::LE(0), | size | MessageOption::Size("ScopeArray".to_string(), size.inner() as usize)),
+            "ScopeArray" => Vec::<u8>::new()
+        ];
 
         message.read(raw)?;
         let server_random = cast!(DataType::Slice, message["ServerRandom"])?;
@@ -550,6 +550,7 @@ impl<'a> ClientNewLicense<'a> {
             "ClientRandom" => self.session_encryption_data.client_random.clone(),
             "EncryptedPreMasterSecret" => BinaryBlob::new(BlobType::Random, self.session_encryption_data.encrypt_message(&self.session_encryption_data.premaster_secret)?).component(),
             "ClientUserName" => BinaryBlob::new(BlobType::ClientUserName, self.username.to_bytes_with_nul().to_owned()).component(),
+            // TODO: consider using machine hostname
             "ClientMachineName" => BinaryBlob::new(BlobType::ClientMachineName, self.domain.to_bytes_with_nul().to_owned()).component()
         ];
 
@@ -798,19 +799,34 @@ pub fn client_connect<T: Read + Write>(
         // When we get the `NewLicense` message at the start of the
         // license flow it means that we don't have to continue
         // so we can return
-        LicenseMessage::NewLicense(_) => return Ok(()),
+        LicenseMessage::NewLicense(l) => {
+            println!(
+                "[LIC] server sent {} bytes of license data, license negotiation complete",
+                l.encrypted_license_data.len()
+            );
+            return Ok(());
+        }
         LicenseMessage::LicenseRequest(request) => {
+            println!("[LIC] server is requesting a license");
             let session_encryption_data = SessionEncryptionData::new(
                 random(CLIENT_RANDOM_SIZE),
                 request.server_random,
                 random(PREMASTER_RANDOM_SIZE),
                 request.certificate,
             );
+
+            // A more sophisticated implementation would check a local client-side
+            // store to see if there is an existing license that can be reused.
+            // We go straight to the new license flow since we don't implement
+            // client-side license storage.
+
             let client_new_license_response = ClientNewLicense::new(
                 &session_encryption_data,
                 CString::new(domain).unwrap_or_else(|_| CString::new(".").unwrap()),
                 CString::new(username).unwrap_or_else(|_| CString::new("default").unwrap()),
             )?;
+
+            println!("[LIC] sending new license request");
             mcs.write(
                 &channel,
                 license_response(
@@ -820,7 +836,14 @@ pub fn client_connect<T: Read + Write>(
             )?;
             session_encryption_data
         }
-        LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
+        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f18b6c9f-f3d8-4a0e-8398-f9b153233dca
+        LicenseMessage::ErrorAlert(error_alert) => {
+            println!(
+                "[LIC] server responded with alert, code={:?} state={:?}",
+                error_alert.code, error_alert.state_transition,
+            );
+            return error_alert.is_valid();
+        }
         _ => {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidRespond,
@@ -832,8 +855,11 @@ pub fn client_connect<T: Read + Write>(
     let (channel, payload) = mcs.read()?;
     match LicenseMessage::new(payload)? {
         LicenseMessage::PlatformChallenge(platform_challenge) => {
+            println!("[LIC] received platform challenge from server");
             let platform_challenge_response =
                 ClientPlatformChallenge::new(platform_challenge, &session_encryption_data)?;
+
+            println!("[LIC] sending challenge response");
             mcs.write(
                 &channel,
                 license_response(
@@ -842,7 +868,14 @@ pub fn client_connect<T: Read + Write>(
                 )?,
             )?;
         }
-        LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
+        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpele/7d601f57-2629-4fd8-a468-9246bdad1340
+        LicenseMessage::ErrorAlert(error_alert) => {
+            println!(
+                "[LIC] server responded with alert, code={:?} state={:?}",
+                error_alert.code, error_alert.state_transition,
+            );
+            return error_alert.is_valid();
+        }
         _ => {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidRespond,
@@ -854,11 +887,32 @@ pub fn client_connect<T: Read + Write>(
     let (_channel, payload) = mcs.read()?;
     match LicenseMessage::new(payload)? {
         LicenseMessage::NewLicense(new_license) => {
+            println!("[LIC] received new license from server");
             // At the moment we're not storing license client-side,
             // so we can just validate data and return
             let _license = License::new(&session_encryption_data, &new_license)?;
+            println!("[LIC] license negotiation complete");
         }
-        LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
+        LicenseMessage::ErrorAlert(error_alert) => {
+            // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpele/7d601f57-2629-4fd8-a468-9246bdad1340
+            //
+            // ERR_NO_LICENSE_SERVER (0x00000006) w/ state transition of ST_TOTAL_ABORT (0x00000001)
+            // would indicate that the license server cannot be contacted to issue a CAL, and the
+            // server's grace period expired.
+            //
+            // ERR_INVALID_CLIENT (0x00000008) w/ ST_TOTAL_ABORT (0x00000001) means the license server
+            // is available to upgrade the CAL, but it cannot do so (client error).
+            println!(
+                "[LIC] server responded to challenge with alert, code={:?} state={:?}",
+                error_alert.code, error_alert.state_transition,
+            );
+            return error_alert.is_valid();
+        }
+        LicenseMessage::UpgradeLicense(_) => {
+            // we don't expect this, because we never send an existing license
+            // so there shouldn't be anything to upgrade
+            println!("[LIC] server is requesting a license upgrade (this is unexpected)");
+        }
         _ => {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidRespond,
