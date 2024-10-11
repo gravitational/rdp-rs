@@ -24,3 +24,13 @@ impl Unicode for String {
         result.into_inner()
     }
 }
+
+pub fn parse_utf16le(bytes: &[u8]) -> String {
+    let x: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|pair| (pair[1] as u16) << 8 | pair[0] as u16)
+        .collect();
+
+    // strip last null character
+    String::from_utf16_lossy(&x[..x.len() - 1])
+}
