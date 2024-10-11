@@ -7,7 +7,7 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::model::rnd::random;
 use crate::model::unicode;
 use num_enum::TryFromPrimitive;
-use std::convert::TryFrom;
+use std::ffi::CStr;
 use std::ffi::CString;
 use std::io::{self, Cursor, Read, Write};
 
@@ -131,10 +131,10 @@ pub enum ClientOsId {
 }
 
 pub enum LicenseMessage {
-    NewLicense(NewLicense),
+    NewLicense(ServerNewLicense),
     LicenseRequest(ServerLicenseRequest),
-    PlatformChallenge(PlatformChallenge),
-    UpgradeLicense(UpgradeLicense),
+    PlatformChallenge(ServerPlatformChallenge),
+    UpgradeLicense(ServerUpgradeLicense),
     ErrorAlert(ErrorAlert),
 }
 
@@ -146,13 +146,12 @@ impl LicenseMessage {
             "securityFlagHi" => U16::LE(0)
         ];
         security_header.read(&mut stream)?;
-        if (cast!(DataType::U16, security_header["securityFlag"])?
-            & SecurityFlag::SecLicensePkt as u16)
-            == 0
-        {
+
+        let security_flag = cast!(DataType::U16, security_header["securityFlag"])?;
+        if (security_flag & SecurityFlag::SecLicensePkt as u16) == 0 {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
-                "SEC: Invalid Licence packet",
+                &format!("SEC: Invalid Licence packet (flag={security_flag:x})"),
             )));
         }
 
@@ -167,17 +166,20 @@ impl LicenseMessage {
         let msg_type = cast!(DataType::U8, license_message["bMsgtype"])?;
         let mut msg_data = Cursor::new(cast!(DataType::Slice, license_message["message"])?);
 
-        match MessageType::try_from(cast!(DataType::U8, license_message["bMsgtype"])?)? {
-            MessageType::NewLicense => Ok(Self::NewLicense(NewLicense::from_bytes(&mut msg_data)?)),
+        let message_type = cast!(DataType::U8, license_message["bMsgtype"])?;
+        match MessageType::try_from(message_type)? {
+            MessageType::NewLicense => Ok(Self::NewLicense(ServerNewLicense::from_bytes(
+                &mut msg_data,
+            )?)),
             MessageType::LicenseRequest => Ok(Self::LicenseRequest(
                 ServerLicenseRequest::from_bytes(&mut msg_data)?,
             )),
             MessageType::PlatformChallenge => Ok(Self::PlatformChallenge(
-                PlatformChallenge::from_bytes(&mut msg_data)?,
+                ServerPlatformChallenge::from_bytes(&mut msg_data)?,
             )),
-            MessageType::UpgradeLicense => Ok(Self::UpgradeLicense(UpgradeLicense::from_bytes(
-                &mut msg_data,
-            )?)),
+            MessageType::UpgradeLicense => Ok(Self::UpgradeLicense(
+                ServerUpgradeLicense::from_bytes(&mut msg_data)?,
+            )),
             MessageType::ErrorAlert => Ok(Self::ErrorAlert(ErrorAlert::from_bytes(&mut msg_data)?)),
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::NotImplemented,
@@ -208,10 +210,10 @@ impl ServerCertificate {
                     "dwSigAlgId" => U32::LE(0),
                     "dwKeyAlgId" => U32::LE(0),
                     "wPublicKeyBlobType" => U16::LE(0),
-                    "wPublicKeyBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("PublicKeyBlob".to_string(), size.inner() as usize)),
+                    "wPublicKeyBlobLen" => DynOption::new(U16::LE(0), |size| MessageOption::Size("PublicKeyBlob".to_string(), size.inner() as usize)),
                     "PublicKeyBlob" => component![
                         "magic" => U32::LE(0),
-                        "keylen" => DynOption::new(U32::LE(0), | size | MessageOption::Size("modulus".to_string(), size.inner() as usize - 8)),
+                        "keylen" => DynOption::new(U32::LE(0), |size| MessageOption::Size("modulus".to_string(), size.inner() as usize - 8)),
                         "bitlen" => U32::LE(0),
                         "datalen" => U32::LE(0),
                         "pubExp" => U32::LE(0),
@@ -219,7 +221,7 @@ impl ServerCertificate {
                         "padding" => vec![0_u8; 8]
                     ],
                     "wSignatureBlobType" => U16::LE(0),
-                    "wSignatureBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("SignatureBlob".to_string(), size.inner() as usize)),
+                    "wSignatureBlobLen" => DynOption::new(U16::LE(0), |size| MessageOption::Size("SignatureBlob".to_string(), size.inner() as usize)),
                     "SignatureBlob" => Vec::<u8>::new()
                 ];
 
@@ -257,7 +259,7 @@ impl ServerCertificate {
                 let mut certificates: Vec<Vec<u8>> = Vec::with_capacity(num_cert_blobs as usize);
                 for _ in 0..num_cert_blobs {
                     let mut cert_blob = component![
-                        "cbCert" => DynOption::new(U32::LE(0), | size | MessageOption::Size("abCert".to_string(), size.inner() as usize)),
+                        "cbCert" => DynOption::new(U32::LE(0), |size| MessageOption::Size("abCert".to_string(), size.inner() as usize)),
                         "abCert" => Vec::<u8>::new()
                     ];
                     cert_blob.read(&mut cert_data)?;
@@ -315,30 +317,52 @@ impl ServerCertificate {
     }
 }
 
-pub struct NewLicense {
+/// ServerNewLicense is sent from server to client when
+/// a new license is issued to the client.
+///
+/// See MS-RDPELE section 2.2.2.7.
+pub struct ServerNewLicense {
     mac_data: Vec<u8>,
     encrypted_license_data: Vec<u8>,
 }
 
-impl NewLicense {
+impl ServerNewLicense {
     fn from_bytes(raw: &mut dyn Read) -> RdpResult<Self> {
         let mut message = component![
             "EncryptedLicenseInfo" => component![
                 "wBlobType" => U16::LE(0),
-                "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
+                "wBlobLen" => DynOption::new(U16::LE(0), |size| MessageOption::Size("blobData".to_string(), size.inner() as usize)),
                 "blobData" => Vec::<u8>::new()
             ],
             "MACData" => vec![0_u8; 16]
         ];
 
         message.read(raw)?;
-        let encrypted_license_data =
-            cast!(DataType::Slice, message["EncryptedLicenseInfo"])?.to_vec();
+
+        let encrypted_license_data = cast!(
+            DataType::Slice,
+            cast!(DataType::Component, message["EncryptedLicenseInfo"])?["blobData"]
+        )?
+        .to_vec();
         let mac_data = cast!(DataType::Slice, message["MACData"])?.to_vec();
         Ok(Self {
             encrypted_license_data,
             mac_data,
         })
+    }
+
+    #[expect(dead_code)]
+    fn decrypted_license(
+        &self,
+        session_encryption_data: &SessionEncryptionData,
+    ) -> RdpResult<License> {
+        License::new(
+            session_encryption_data,
+            &ServerNewLicense {
+                mac_data: self.mac_data.clone(),
+                encrypted_license_data: self.encrypted_license_data.clone(),
+            },
+        )
     }
 }
 
@@ -354,7 +378,7 @@ impl ErrorAlert {
         "dwStateTransition" => U32::LE(0),
         "blob" => component![
             "wBlobType" => U16::LE(0),
-            "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
+            "wBlobLen" => DynOption::new(U16::LE(0), |size| MessageOption::Size("blobData".to_string(), size.inner() as usize)),
             "blobData" => Vec::<u8>::new()
         ]];
         message.read(raw)?;
@@ -401,81 +425,109 @@ impl BinaryBlob {
     }
 }
 
-#[allow(dead_code)]
-pub struct UpgradeLicense {
-    mac_data: Vec<u8>,
-    encrypted_license_data: Vec<u8>,
-}
-
-impl UpgradeLicense {
-    fn from_bytes(raw: &mut dyn Read) -> RdpResult<Self> {
-        let mut message = component![
-            "EncryptedLicenseInfo" => component![
-                "wBlobType" => U16::LE(0),
-                "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
-                "blobData" => Vec::<u8>::new()
-            ],
-            "MACData" => vec![0_u8; 16]
-        ];
-        message.read(raw)?;
-
-        let encrypted_license_data =
-            cast!(DataType::Slice, message["EncryptedLicenseInfo"])?.to_vec();
-        let mac_data = cast!(DataType::Slice, message["MACData"])?.to_vec();
-
-        Ok(Self {
-            encrypted_license_data,
-            mac_data,
-        })
-    }
-
-    // TODO(zmb3): remove this exception
-    #[allow(dead_code)]
-    fn decrypted_license(&self, session_encryption_data: &SessionEncryptionData) -> Vec<u8> {
-        session_encryption_data.decrypt_message(&self.encrypted_license_data)
-    }
-}
+/// ServerUpgradeLicense is sent from server to client if the client
+/// presents an existing license and the server determines that this
+/// license should be upgraded.
+///
+/// The structure and content of this message is identical to the
+/// ServerNewLicense message.
+///
+/// See MS-RDPELE section 2.2.2.6.
+type ServerUpgradeLicense = ServerNewLicense;
 
 /// License data that has been obtained from the sever
 #[allow(dead_code)]
 struct License {
-    data: Vec<u8>,
+    // The version, scope, company name, and product ID fields are used
+    // by the client to index the licenses in the client's license store.
+    version_major: u16,
+    version_minor: u16,
+    scope: String,
+    company_name: String,
+    product_id: String,
+
+    // In theory, this is a DER-encoded X.509 certificate that has some
+    // helpful data in its certificate extensions:
+    //
+    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpele/99e6bdc5-4517-45a3-be72-a254e8389546
+    //
+    // In practice, something about this cert is non-standard: both Go's crypto/x509 package
+    // and Rust's x509_parser crate choke when attempting to parse it.
+    // (Note that `openssl asn1parse -inform DER` does work)
+    cert_data: Vec<u8>,
 }
 
 impl License {
     fn new(
         session_encryption_data: &SessionEncryptionData,
-        new_license: &NewLicense,
+        new_license: &ServerNewLicense,
     ) -> RdpResult<Self> {
-        let mut rc4 = Rc4::new(Key::<rc4::consts::U16>::from_slice(
-            &session_encryption_data.license_encryption_key,
-        ));
-
-        let mut data: Vec<u8> = new_license.encrypted_license_data.clone();
-        rc4.apply_keystream(&mut data);
-
+        // Decrypt and validate the MAC
+        let data = session_encryption_data.decrypt_message(&new_license.encrypted_license_data);
         if session_encryption_data.generate_mac_data(&data) != new_license.mac_data {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
-                "license MAC is different than MAC from encrypted message",
+                "new license MAC is different than MAC from encrypted message",
             )));
         }
-        Ok(Self { data })
+
+        Self::from_decrypted_data(&mut Cursor::new(&data))
+    }
+
+    fn from_decrypted_data(reader: &mut dyn Read) -> RdpResult<Self> {
+        // The decrypted data contains a New License Information packet.
+        // (See MS-RDPELE section 2.2.2.6.1)
+        let mut license_info = component![
+            "dwVersion" => U32::LE(0),
+            "cbScope" => DynOption::new(U32::LE(0), |size| MessageOption::Size("pbScope".to_string(), size.inner() as usize)),
+            "pbScope" => Vec::<u8>::new(),
+            "cbCompanyName" => DynOption::new(U32::LE(0), |size| MessageOption::Size("pbCompanyName".to_string(), size.inner() as usize)),
+            "pbCompanyName" => Vec::<u8>::new(),
+            "cbProductId" => DynOption::new(U32::LE(0), |size| MessageOption::Size("pbProductId".to_string(), size.inner() as usize)),
+            "pbProductId" => Vec::<u8>::new(),
+            "cbLicenseInfo" => DynOption::new(U32::LE(0), |size| MessageOption::Size("pbLicenseInfo".to_string(), size.inner() as usize)),
+            "pbLicenseInfo" => Vec::<u8>::new()
+        ];
+
+        license_info.read(reader)?;
+
+        let version = cast!(DataType::U32, license_info["dwVersion"])?;
+        let scope = cast!(DataType::Slice, license_info["pbScope"])?;
+
+        Ok(Self {
+            version_major: (version >> 16) as u16,
+            version_minor: (version & 0xFFFF) as u16,
+            scope: String::from(
+                CStr::from_bytes_with_nul(scope)
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default(),
+            ),
+            company_name: unicode::parse_utf16le(cast!(
+                DataType::Slice,
+                license_info["pbCompanyName"]
+            )?),
+            product_id: unicode::parse_utf16le(cast!(
+                DataType::Slice,
+                license_info["pbProductId"]
+            )?),
+            cert_data: cast!(DataType::Slice, license_info["pbLicenseInfo"])?.to_vec(),
+        })
     }
 }
 
-pub struct PlatformChallenge {
+pub struct ServerPlatformChallenge {
     mac_data: Vec<u8>,
     encrypted_platform_challenge: Vec<u8>,
 }
 
-impl PlatformChallenge {
+impl ServerPlatformChallenge {
     fn from_bytes(raw: &mut dyn Read) -> RdpResult<Self> {
         let mut message = component![
                 "ConnectFlags" => U32::LE(0),
                 "EncryptedPlatformChallenge" => component![
                     "wBlobType" => U16::LE(0),
-                    "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
+                    "wBlobLen" => DynOption::new(U16::LE(0), |size| MessageOption::Size("blobData".to_string(), size.inner() as usize)),
                     "blobData" => Vec::<u8>::new()
                 ],
                 "MACData" => vec![0_u8; 16]
@@ -502,6 +554,8 @@ pub struct ServerLicenseRequest {
 
     company_name: String,
     product_id: String,
+
+    scopes: Vec<String>,
 }
 
 impl ServerLicenseRequest {
@@ -509,22 +563,21 @@ impl ServerLicenseRequest {
         let mut message = component![
             "ServerRandom" => vec![0; 32],
             "dwVersion" => U32::LE(0),
-            "cbCompanyName" => DynOption::new(U32::LE(0), | size | MessageOption::Size("pbCompanyName".to_string(), size.inner() as usize)),
+            "cbCompanyName" => DynOption::new(U32::LE(0), |size| MessageOption::Size("pbCompanyName".to_string(), size.inner() as usize)),
             "pbCompanyName" => Vec::<u8>::new(),
-            "cbProductId" => DynOption::new(U32::LE(0), | size | MessageOption::Size("pbProductId".to_string(), size.inner() as usize)),
+            "cbProductId" => DynOption::new(U32::LE(0), |size| MessageOption::Size("pbProductId".to_string(), size.inner() as usize)),
             "pbProductId" => Vec::<u8>::new(),
             "KeyExchangeList" => component![
                 "wBlobType" => U16::LE(0),
-                "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
+                "wBlobLen" => DynOption::new(U16::LE(0), |size| MessageOption::Size("blobData".to_string(), size.inner() as usize)),
                 "blobData" => Vec::<u8>::new()
             ],
             "ServerCertificate" => component![
                 "wBlobType" => U16::LE(0),
-                "wBlobLen" => DynOption::new(U16::LE(0), | size | MessageOption::Size("blobData".to_string(), size.inner() as usize)),
+                "wBlobLen" => DynOption::new(U16::LE(0), |size| MessageOption::Size("blobData".to_string(), size.inner() as usize)),
                 "blobData" => Vec::<u8>::new()
             ],
-            "ScopeCount" => DynOption::new(U32::LE(0), | size | MessageOption::Size("ScopeArray".to_string(), size.inner() as usize)),
-            "ScopeArray" => Vec::<u8>::new()
+            "ScopeCount" => U32::LE(0)
         ];
 
         message.read(raw)?;
@@ -532,6 +585,21 @@ impl ServerLicenseRequest {
         let version = cast!(DataType::U32, message["dwVersion"])?;
         let server_certificate = cast!(DataType::Component, message["ServerCertificate"])?;
         let mut blob_data = cast!(DataType::Slice, server_certificate["blobData"])?;
+        let scope_count = cast!(DataType::U32, message["ScopeCount"])?;
+
+        let mut scopes = Vec::with_capacity(scope_count as usize);
+        for _i in 0..scope_count {
+            let mut scope = BinaryBlob::new(BlobType::Scope, vec![]).component();
+            scope.read(raw)?;
+
+            let issuer = cast!(DataType::Slice, scope["blobData"])?;
+            scopes.push(String::from(
+                CStr::from_bytes_with_nul(issuer)
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default(),
+            ));
+        }
 
         Ok(Self {
             server_random: Vec::from(server_random),
@@ -540,6 +608,7 @@ impl ServerLicenseRequest {
             product_id: unicode::parse_utf16le(cast!(DataType::Slice, message["pbProductId"])?),
             version_major: (version >> 16) as u16,
             version_minor: (version & 0xFFFF) as u16,
+            scopes,
         })
     }
 }
@@ -568,7 +637,7 @@ impl<'a> ClientNewLicense<'a> {
             "PreferredKeyExchangeAlg" => U32::LE(KEY_EXCHANGE_ALG_RSA),
             "PlatformId" => U32::LE(ClientOsId::WinNtPost52 as u32 | ClientImageId::Microsoft as u32),
             "ClientRandom" => self.session_encryption_data.client_random.clone(),
-            "EncryptedPreMasterSecret" => BinaryBlob::new(BlobType::Random, self.session_encryption_data.encrypt_message(&self.session_encryption_data.premaster_secret)?).component(),
+            "EncryptedPreMasterSecret" => BinaryBlob::new(BlobType::Random, self.session_encryption_data.encrypted_premaster_secret()?).component(),
             "ClientUserName" => BinaryBlob::new(BlobType::ClientUserName, self.username.to_bytes_with_nul().to_owned()).component(),
             "ClientMachineName" => BinaryBlob::new(BlobType::ClientMachineName, self.client_machine.to_bytes_with_nul().to_owned()).component()
         ];
@@ -579,20 +648,21 @@ impl<'a> ClientNewLicense<'a> {
     }
 }
 
-struct ClientPlatformChallenge<'a> {
+struct ClientPlatformChallengeResponse<'a> {
     session_encryption_data: &'a SessionEncryptionData,
     platform_challenge_data: Vec<u8>,
     client_hwid: [u8; 16],
 }
 
-impl<'a> ClientPlatformChallenge<'a> {
+impl<'a> ClientPlatformChallengeResponse<'a> {
     fn new(
-        platform_challenge: PlatformChallenge,
+        platform_challenge: ServerPlatformChallenge,
         session_encryption_data: &'a SessionEncryptionData,
         client_hwid: [u8; 16],
     ) -> RdpResult<Self> {
         let platform_challenge_data = session_encryption_data
             .decrypt_message(&platform_challenge.encrypted_platform_challenge);
+
         if session_encryption_data.generate_mac_data(&platform_challenge_data)
             != platform_challenge.mac_data
         {
@@ -610,51 +680,44 @@ impl<'a> ClientPlatformChallenge<'a> {
     }
 
     fn to_bytes(&self) -> RdpResult<Vec<u8>> {
-        let platform_challenge_response_data = component![
+        let platform_challenge_response_component = component![
             "wVersion" => U16::LE(PLATFORM_CHALLENGE_VERSION),
             "wClientType" => U16::LE(PlatformChallengeType::Other as u16),
             "wLicenseDetailLevel" => U16::LE(LicenseDetailLevel::Detail as u16),
             "cbChallenge" => U16::LE(self.platform_challenge_data.len() as u16),
             "pbChallenge" => self.platform_challenge_data.clone()
         ];
+        let mut platform_challenge_response_data =
+            Vec::with_capacity(platform_challenge_response_component.length() as usize);
+        platform_challenge_response_component.write(&mut platform_challenge_response_data)?;
 
-        let client_hardware_identification = component![
+        let client_hardware_identification_component = component![
             "PlatformId" => U32::LE(ClientOsId::WinNtPost52 as u32 | ClientImageId::Microsoft as u32),
             "client_hardware_id" => self.client_hwid.to_vec()
         ];
+        let mut client_hardware_identification_data =
+            Vec::with_capacity(client_hardware_identification_component.length() as usize);
+        client_hardware_identification_component.write(&mut client_hardware_identification_data)?;
 
-        let mut response_platform_challenge_response_data: Vec<u8> =
-            Vec::with_capacity(platform_challenge_response_data.len());
-        platform_challenge_response_data.write(&mut response_platform_challenge_response_data)?;
-        let mut rc4 = Rc4::new(Key::<rc4::consts::U16>::from_slice(
-            &self.session_encryption_data.license_encryption_key,
-        ));
+        let encrypted_platform_challenge_response = self
+            .session_encryption_data
+            .encrypt_message(&platform_challenge_response_data);
+        let encrypted_client_hwid = self
+            .session_encryption_data
+            .encrypt_message(&client_hardware_identification_data);
 
-        rc4.apply_keystream(&mut response_platform_challenge_response_data);
-
-        let mut response_client_hardware_identification_data =
-            Vec::with_capacity(client_hardware_identification.length() as usize);
-        client_hardware_identification.write(&mut response_client_hardware_identification_data)?;
-
-        let mut rc4 = Rc4::new(Key::<rc4::consts::U16>::from_slice(
-            &self.session_encryption_data.license_encryption_key,
-        ));
-
-        rc4.apply_keystream(&mut response_client_hardware_identification_data);
-
-        // MD5 digest (MAC) generated over the Platform Challenge Response Data and decrypted Client Hardware Identification
-        let mut mac_input = Vec::with_capacity(
-            response_platform_challenge_response_data.len()
-                + response_client_hardware_identification_data.len(),
+        // the MAC is generated over the unencrypted challenge response and client HWID data
+        let mac_data = self.session_encryption_data.generate_mac_data(
+            &[
+                &platform_challenge_response_data[..],
+                &client_hardware_identification_data[..],
+            ]
+            .concat(),
         );
-        mac_input.extend(&response_platform_challenge_response_data);
-        mac_input.extend(&response_client_hardware_identification_data);
-
-        let mac_data = self.session_encryption_data.generate_mac_data(&mac_input);
 
         let client_platform_challenge_response = component![
-            "EncryptedPlatformChallengeResponse" => BinaryBlob::new(BlobType::EncryptedData, response_platform_challenge_response_data).component(),
-            "EncryptedHWID" => BinaryBlob::new(BlobType::EncryptedData, response_client_hardware_identification_data).component(),
+            "EncryptedPlatformChallengeResponse" => BinaryBlob::new(BlobType::EncryptedData, encrypted_platform_challenge_response).component(),
+            "EncryptedHWID" => BinaryBlob::new(BlobType::EncryptedData, encrypted_client_hwid).component(),
             "MACData" => mac_data
         ];
 
@@ -674,16 +737,27 @@ struct SessionEncryptionData {
 }
 
 impl SessionEncryptionData {
+    /// new generates the licensing encryption and MAC salt keys
+    /// that will be used to decrypt and encrypt licensing data.
+    ///
+    /// See MS-RDPELE section 5.1.2
     fn new(
         client_random: Vec<u8>,
         server_random: Vec<u8>,
         premaster_secret: Vec<u8>,
         server_certificate: ServerCertificate,
     ) -> Self {
+        // compute the master secret and session key blob
         let master_secret = Self::master_secret(&premaster_secret, &client_random, &server_random);
         let session_key_blob =
             Self::session_key_blob(&master_secret, &client_random, &server_random);
+
+        // the first 16 bytes of the session key blob are the MAC salt key used
+        // to generate the MAC checksum to validate the integrity of messages
         let mac_salt_key = session_key_blob[..16].to_vec();
+
+        // the second 16 bytes of the session key blob are used to generate the
+        // licensing encryption key
         let mut md5 = md5::Md5::new();
         md5.input([&session_key_blob[16..32], &client_random, &server_random].concat());
         let license_encryption_key = md5.result().to_vec();
@@ -712,10 +786,15 @@ impl SessionEncryptionData {
         buf
     }
 
-    pub fn encrypt_message(&self, message: &[u8]) -> io::Result<Vec<u8>> {
+    pub fn encrypt_message(&self, message: &[u8]) -> Vec<u8> {
+        self.decrypt_message(message)
+    }
+
+    pub fn encrypted_premaster_secret(&self) -> io::Result<Vec<u8>> {
+        // the premaster secret is encrypted with RSA using the public key of the server
         let n = BigUint::from_bytes_be(&self.rsa_public_key.n().to_bytes_be());
         let e = BigUint::from_bytes_be(&self.rsa_public_key.e().to_bytes_be());
-        let m = BigUint::from_bytes_le(message);
+        let m = BigUint::from_bytes_le(&self.premaster_secret);
         let c = m.modpow(&e, &n);
 
         let mut encrypted = c.to_bytes_le();
@@ -723,14 +802,19 @@ impl SessionEncryptionData {
         Ok(encrypted)
     }
 
-    fn salted_hash(input: &[u8], salt: &[u8], salt1: &[u8], salt2: &[u8]) -> Vec<u8> {
+    fn salted_hash(
+        input: &[u8],
+        salt: &[u8],
+        client_random: &[u8],
+        server_random: &[u8],
+    ) -> Vec<u8> {
         let mut md5 = md5::Md5::new();
         md5.input(
             [
                 salt,
                 digest::digest(
                     &digest::SHA1_FOR_LEGACY_USE_ONLY,
-                    &[input, salt, salt1, salt2].concat(),
+                    &[input, salt, client_random, server_random].concat(),
                 )
                 .as_ref(),
             ]
@@ -757,6 +841,8 @@ impl SessionEncryptionData {
         client_random: &[u8],
         server_random: &[u8],
     ) -> Vec<u8> {
+        // this is subtle, but note the difference in order for the server and client
+        // random values (they're opposite from what we used to compute the master secret)
         [
             Self::salted_hash(b"A", master_secret, server_random, client_random),
             Self::salted_hash(b"BB", master_secret, server_random, client_random),
@@ -765,6 +851,7 @@ impl SessionEncryptionData {
         .concat()
     }
 
+    /// See MS-RDPELE section 5.1.5: MAC Generation.
     fn generate_mac_data(&self, data: &[u8]) -> Vec<u8> {
         let mut md5 = md5::Md5::new();
         md5.input(
@@ -818,33 +905,105 @@ impl<'a> ClientLicenseInfo<'a> {
             "PlatformId" => platform_id,
             "client_hardware_id" => self.client_hwid.to_vec()
         ];
-        let mut encrypted_hardware_identification =
+        let mut hardware_identification_data =
             Vec::with_capacity(hardware_identification.length() as usize);
-        hardware_identification.write(&mut encrypted_hardware_identification)?;
+        hardware_identification.write(&mut hardware_identification_data)?;
 
-        // make a copy of the hardware identification info prior to encrypting it,
-        // which will be used as input to the MAC
-        let mac_input = encrypted_hardware_identification.clone();
+        // the MAC is computed over the unencrypted hardware identification data
+        let mac_data = self
+            .session_encryption_data
+            .generate_mac_data(&hardware_identification_data);
 
-        // now encrypt the data
-        let mut rc4 = Rc4::new(Key::<rc4::consts::U16>::from_slice(
-            &self.session_encryption_data.license_encryption_key,
-        ));
-        rc4.apply_keystream(&mut encrypted_hardware_identification);
+        let encrypted_hwid = self
+            .session_encryption_data
+            .encrypt_message(&hardware_identification_data);
 
         let request = component![
             "PreferredKeyExchangeAlg" => U32::LE(KEY_EXCHANGE_ALG_RSA),
             "PlatformId" => platform_id,
             "ClientRandom" => self.session_encryption_data.client_random.clone(),
-            "EncryptedPreMasterSecret" => BinaryBlob::new(BlobType::Random, self.session_encryption_data.encrypt_message(&self.session_encryption_data.premaster_secret)?).component(),
+            "EncryptedPreMasterSecret" => BinaryBlob::new(BlobType::Random, self.session_encryption_data.encrypted_premaster_secret()?).component(),
             "LicenseInfo" => BinaryBlob::new(BlobType::Data, self.license.to_owned()).component(),
-            "EncryptedHWID" => BinaryBlob::new(BlobType::EncryptedData, encrypted_hardware_identification).component(),
-            "MACData" => self.session_encryption_data.generate_mac_data(&mac_input)
+            "EncryptedHWID" => BinaryBlob::new(BlobType::EncryptedData, encrypted_hwid).component(),
+            "MACData" => mac_data
         ];
 
         let mut buf: Vec<u8> = Vec::with_capacity(request.length() as usize);
         request.write(&mut buf)?;
         Ok(buf)
+    }
+}
+
+/// LicensedProductInfo contains information specific to a license
+/// issued to a client. This information is stored inside the license
+/// certificate in the certificate extension with OID 1.3.6.1.4.1.311.18.5.
+///
+/// See MS-RDPELE section 2.2.2.9.1.
+#[allow(dead_code)]
+struct LicensedProductInfo {
+    count: u32, // the number of licenses issued to the client
+    platform_id: u32,
+
+    requested_product_id: String,
+    adjusted_product_id: String,
+
+    product_major_version: u16,
+    product_minor_version: u16,
+
+    flags: u32,
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, TryFromPrimitive)]
+enum ProductLicenseFlags {
+    /// Indicates that license is enforced.
+    LicenseEnforced = 0x00008000,
+    /// Indicates that the license is an RTM license. If this flag
+    /// is not set, then the license is a beta license.
+    RtmLicense = 0x00800000,
+    /// Indicates that the license is a temporary license. If this
+    /// flag is not set, then the license is a permanent license.
+    TemporaryLicense = 0x80000000,
+}
+
+#[allow(dead_code)]
+impl LicensedProductInfo {
+    fn from_bytes(raw: &mut dyn Read) -> RdpResult<Self> {
+        let mut message = component![
+            "Version" => U32::LE(0),
+            "LicenseCount" => U32::LE(0),
+            "PlatformId" => U32::LE(0),
+            "LicensedLanguageId" => U32::LE(0),
+            "RequestedProductIdOffset" => U16::LE(0),
+            "RequestedProductIdByteCount" => DynOption::new(U16::LE(0), |size| MessageOption::Size("RequestedProductId".to_string(), size.inner() as usize)),
+            "AdjustedProductIdOffset" => U16::LE(0),
+            "AdjustedProductIdByteCount" => DynOption::new(U16::LE(0), |size| MessageOption::Size("AdjustedProductId".to_string(), size.inner() as usize)),
+            "LicensedVersionInfoOffset" => U16::LE(0),
+            "LicensedVersionInfoCount" => U16::LE(0),
+            "RequestedProductId" => Vec::<u8>::new(),
+            "AdjustedProductId" => Vec::<u8>::new(),
+            "ProductLicenseMajorVersion" => U16::LE(0),
+            "ProductLicenseMinorVersion" => U16::LE(0),
+            "ProductLicenseFlags" => U32::LE(0)
+        ];
+
+        message.read(raw)?;
+
+        Ok(Self {
+            count: cast!(DataType::U32, message["LicenseCount"])?,
+            platform_id: cast!(DataType::U32, message["PlatformId"])?,
+            requested_product_id: unicode::parse_utf16le(cast!(
+                DataType::Slice,
+                message["RequestedProductId"]
+            )?),
+            adjusted_product_id: unicode::parse_utf16le(cast!(
+                DataType::Slice,
+                message["AdjustedProductId"]
+            )?),
+            product_major_version: cast!(DataType::U16, message["ProductLicenseMajorVersion"])?,
+            product_minor_version: cast!(DataType::U16, message["ProductLicenseMinorVersion"])?,
+            flags: cast!(DataType::U32, message["ProductLicenseFlags"])?,
+        })
     }
 }
 
@@ -875,6 +1034,9 @@ pub fn client_connect<T: Read + Write>(
     // and (in binary form) the hardware identifier for the client.
     let client_uuid = Uuid::try_parse(client_machine)?;
 
+    // TODO(zmb3): attempt to load an existing license
+    let existing_license: Option<Vec<u8>> = None;
+
     let (channel, payload) = mcs.read()?;
     let session_encryption_data = match LicenseMessage::new(payload)? {
         // When we get the `NewLicense` message at the start of the
@@ -888,18 +1050,35 @@ pub fn client_connect<T: Read + Write>(
                 random(PREMASTER_RANDOM_SIZE),
                 request.certificate,
             );
-            let client_new_license_response = ClientNewLicense::new(
-                &session_encryption_data,
-                CString::new(client_machine).unwrap_or_else(|_| CString::new(".").unwrap()),
-                CString::new(username).unwrap_or_else(|_| CString::new("default").unwrap()),
-            )?;
-            mcs.write(
-                &channel,
-                license_response(
-                    MessageType::NewLicenseRequest,
-                    client_new_license_response.to_bytes()?,
-                )?,
-            )?;
+
+            // we either send information about a previously obtained license
+            // or a new license request, depending on whether we have a license
+            // cached from a previous attempt
+            if let Some(license) = existing_license {
+                let license_info = ClientLicenseInfo::new(
+                    &session_encryption_data,
+                    &license,
+                    client_uuid.into_bytes(),
+                )?;
+                mcs.write(
+                    &channel,
+                    license_response(MessageType::LicenseInfo, license_info.to_bytes()?)?,
+                )?
+            } else {
+                let client_new_license_response = ClientNewLicense::new(
+                    &session_encryption_data,
+                    CString::new(username).unwrap_or_else(|_| CString::new("default").unwrap()),
+                    CString::new(client_machine).unwrap_or_else(|_| CString::new(".").unwrap()),
+                )?;
+                mcs.write(
+                    &channel,
+                    license_response(
+                        MessageType::NewLicenseRequest,
+                        client_new_license_response.to_bytes()?,
+                    )?,
+                )?;
+            }
+
             session_encryption_data
         }
         LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
@@ -914,7 +1093,8 @@ pub fn client_connect<T: Read + Write>(
     let (channel, payload) = mcs.read()?;
     match LicenseMessage::new(payload)? {
         LicenseMessage::PlatformChallenge(platform_challenge) => {
-            let platform_challenge_response = ClientPlatformChallenge::new(
+            // validate the integrity of the server challenge and create our response
+            let platform_challenge_response = ClientPlatformChallengeResponse::new(
                 platform_challenge,
                 &session_encryption_data,
                 client_uuid.into_bytes(),
@@ -937,11 +1117,12 @@ pub fn client_connect<T: Read + Write>(
     }
 
     let (_channel, payload) = mcs.read()?;
-    match LicenseMessage::new(payload)? {
+    let license = match LicenseMessage::new(payload)? {
         LicenseMessage::NewLicense(new_license) => {
-            // At the moment we're not storing license client-side,
-            // so we can just validate data and return
-            let _license = License::new(&session_encryption_data, &new_license)?;
+            License::new(&session_encryption_data, &new_license)?
+        }
+        LicenseMessage::UpgradeLicense(new_license) => {
+            License::new(&session_encryption_data, &new_license)?
         }
         LicenseMessage::ErrorAlert(error_alert) => return error_alert.is_valid(),
         _ => {
@@ -950,7 +1131,10 @@ pub fn client_connect<T: Read + Write>(
                 "unexpected license message",
             )))
         }
-    }
+    };
+
+    // TODO(zmb3): save the license
+
     Ok(())
 }
 
@@ -1221,6 +1405,207 @@ mod tests {
             String::from("Microsoft Corporation")
         );
         assert_eq!(server_license_request.product_id, String::from("A02"));
+        assert_eq!(1, server_license_request.scopes.len());
+        assert_eq!(
+            String::from("microsoft.com"),
+            server_license_request.scopes[0]
+        );
+    }
+
+    #[test]
+    fn test_new_license() {
+        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpele/73c596f1-9550-4649-b880-2947c36c1bb6
+        #[rustfmt::skip]
+        let payload = vec![
+            0x00, 0x00, 0x06, 0x00, // dwVersion
+            0x0e, 0x00, 0x00, 0x00, // cbScope
+            0x6d, 0x69, 0x63, 0x72, 0x6f, 0x73, 0x6f, 0x66, 0x74, 0x2e, 0x63, 0x6f, 0x6d, 0x00, // pbScope
+            0x2c, 0x00, 0x00, 0x00, // cbCompanyName
+
+            // pbCompanyname
+            0x4d, 0x00, 0x69, 0x00, 0x63, 0x00, 0x72, 0x00,
+            0x6f, 0x00, 0x73, 0x00, 0x6f, 0x00, 0x66, 0x00,
+            0x74, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
+            0x72, 0x00, 0x70, 0x00, 0x6f, 0x00, 0x72, 0x00,
+            0x61, 0x00, 0x74, 0x00, 0x69, 0x00, 0x6f, 0x00,
+            0x6e, 0x00, 0x00, 0x00,
+
+
+            0x08, 0x00, 0x00, 0x00, // cbProductId
+            0x41, 0x00, 0x30, 0x00, 0x32, 0x00, 0x00, 0x00, // pbProductId
+
+            0x99, 0x07, 0x00, 0x00, // cbLicenseInfo
+
+            // pbLicenseInfo
+            0x30, 0x82, 0x07, 0x95, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02, 0xa0,
+            0x82, 0x07, 0x86, 0x30, 0x82, 0x07, 0x82, 0x02, 0x01, 0x01, 0x31, 0x00, 0x30, 0x0b, 0x06, 0x09,
+            0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x01, 0xa0, 0x82, 0x07, 0x6a, 0x30, 0x82, 0x02,
+            0xf1, 0x30, 0x82, 0x01, 0xdd, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x08, 0x01, 0x9e, 0x27, 0x4d,
+            0x68, 0xac, 0xed, 0x20, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1d, 0x05, 0x00, 0x30,
+            0x32, 0x31, 0x30, 0x30, 0x13, 0x06, 0x03, 0x55, 0x04, 0x03, 0x1e, 0x0c, 0x00, 0x52, 0x00, 0x4f,
+            0x00, 0x44, 0x00, 0x45, 0x00, 0x4e, 0x00, 0x54, 0x30, 0x19, 0x06, 0x03, 0x55, 0x04, 0x07, 0x1e,
+            0x12, 0x00, 0x57, 0x00, 0x4f, 0x00, 0x52, 0x00, 0x4b, 0x00, 0x47, 0x00, 0x52, 0x00, 0x4f, 0x00,
+            0x55, 0x00, 0x50, 0x30, 0x1e, 0x17, 0x0d, 0x37, 0x30, 0x30, 0x35, 0x33, 0x30, 0x31, 0x30, 0x33,
+            0x36, 0x31, 0x38, 0x5a, 0x17, 0x0d, 0x34, 0x39, 0x30, 0x35, 0x33, 0x30, 0x31, 0x30, 0x33, 0x36,
+            0x31, 0x38, 0x5a, 0x30, 0x32, 0x31, 0x30, 0x30, 0x13, 0x06, 0x03, 0x55, 0x04, 0x03, 0x1e, 0x0c,
+            0x00, 0x52, 0x00, 0x4f, 0x00, 0x44, 0x00, 0x45, 0x00, 0x4e, 0x00, 0x54, 0x30, 0x19, 0x06, 0x03,
+            0x55, 0x04, 0x07, 0x1e, 0x12, 0x00, 0x57, 0x00, 0x4f, 0x00, 0x52, 0x00, 0x4b, 0x00, 0x47, 0x00,
+            0x52, 0x00, 0x4f, 0x00, 0x55, 0x00, 0x50, 0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09, 0x2a,
+            0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00, 0x03, 0x82, 0x01, 0x0f, 0x00, 0x30,
+            0x82, 0x01, 0x0a, 0x02, 0x82, 0x01, 0x01, 0x00, 0x88, 0xad, 0x7c, 0x8f, 0x8b, 0x82, 0x76, 0x5a,
+            0xbd, 0x8f, 0x6f, 0x62, 0x18, 0xe1, 0xd9, 0xaa, 0x41, 0xfd, 0xed, 0x68, 0x01, 0xc6, 0x34, 0x35,
+            0xb0, 0x29, 0x04, 0xca, 0x4a, 0x4a, 0x1c, 0x7e, 0x80, 0x14, 0xf7, 0x8e, 0x77, 0xb8, 0x25, 0xff,
+            0x16, 0x47, 0x6f, 0xbd, 0xe2, 0x34, 0x3d, 0x2e, 0x02, 0xb9, 0x53, 0xe4, 0x33, 0x75, 0xad, 0x73,
+            0x28, 0x80, 0xa0, 0x4d, 0xfc, 0x6c, 0xc0, 0x22, 0x53, 0x1b, 0x2c, 0xf8, 0xf5, 0x01, 0x60, 0x19,
+            0x7e, 0x79, 0x19, 0x39, 0x8d, 0xb5, 0xce, 0x39, 0x58, 0xdd, 0x55, 0x24, 0x3b, 0x55, 0x7b, 0x43,
+            0xc1, 0x7f, 0x14, 0x2f, 0xb0, 0x64, 0x3a, 0x54, 0x95, 0x2b, 0x88, 0x49, 0x0c, 0x61, 0x2d, 0xac,
+            0xf8, 0x45, 0xf5, 0xda, 0x88, 0x18, 0x5f, 0xae, 0x42, 0xf8, 0x75, 0xc7, 0x26, 0x6d, 0xb5, 0xbb,
+            0x39, 0x6f, 0xcc, 0x55, 0x1b, 0x32, 0x11, 0x38, 0x8d, 0xe4, 0xe9, 0x44, 0x84, 0x11, 0x36, 0xa2,
+            0x61, 0x76, 0xaa, 0x4c, 0xb4, 0xe3, 0x55, 0x0f, 0xe4, 0x77, 0x8e, 0xde, 0xe3, 0xa9, 0xea, 0xb7,
+            0x41, 0x94, 0x00, 0x58, 0xaa, 0xc9, 0x34, 0xa2, 0x98, 0xc6, 0x01, 0x1a, 0x76, 0x14, 0x01, 0xa8,
+            0xdc, 0x30, 0x7c, 0x77, 0x5a, 0x20, 0x71, 0x5a, 0xa2, 0x3f, 0xaf, 0x13, 0x7e, 0xe8, 0xfd, 0x84,
+            0xa2, 0x5b, 0xcf, 0x25, 0xe9, 0xc7, 0x8f, 0xa8, 0xf2, 0x8b, 0x84, 0xc7, 0x04, 0x5e, 0x53, 0x73,
+            0x4e, 0x0e, 0x89, 0xa3, 0x3c, 0xe7, 0x68, 0x5c, 0x24, 0xb7, 0x80, 0x53, 0x3c, 0x54, 0xc8, 0xc1,
+            0x53, 0xaa, 0x71, 0x71, 0x3d, 0x36, 0x15, 0xd6, 0x6a, 0x9d, 0x7d, 0xde, 0xae, 0xf9, 0xe6, 0xaf,
+            0x57, 0xae, 0xb9, 0x01, 0x96, 0x5d, 0xe0, 0x4d, 0xcd, 0xed, 0xc8, 0xd7, 0xf3, 0x01, 0x03, 0x38,
+            0x10, 0xbe, 0x7c, 0x42, 0x67, 0x01, 0xa7, 0x23, 0x02, 0x03, 0x01, 0x00, 0x01, 0xa3, 0x13, 0x30,
+            0x11, 0x30, 0x0f, 0x06, 0x03, 0x55, 0x1d, 0x13, 0x04, 0x08, 0x30, 0x06, 0x01, 0x01, 0xff, 0x02,
+            0x01, 0x00, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1d, 0x05, 0x00, 0x03, 0x82, 0x01,
+            0x01, 0x00, 0x70, 0xdb, 0x21, 0x2b, 0x84, 0x9a, 0x7a, 0xc3, 0xb1, 0x68, 0xfa, 0xc0, 0x00, 0x8b,
+            0x71, 0xab, 0x43, 0x9f, 0xb6, 0x7b, 0xb7, 0x1f, 0x20, 0x83, 0xac, 0x0a, 0xb5, 0x0e, 0xad, 0xb6,
+            0x36, 0xef, 0x65, 0x17, 0x99, 0x86, 0x8a, 0x3d, 0xba, 0x0c, 0x53, 0x2e, 0xa3, 0x75, 0xa0, 0xf3,
+            0x11, 0x3d, 0xe7, 0x65, 0x4b, 0xae, 0x3c, 0x42, 0x70, 0x11, 0xdc, 0xca, 0x83, 0xc0, 0xbe, 0x3e,
+            0x97, 0x71, 0x84, 0x69, 0xd6, 0xa8, 0x27, 0x33, 0x9b, 0x3e, 0x17, 0x3c, 0xa0, 0x4c, 0x64, 0xca,
+            0x20, 0x37, 0xa4, 0x11, 0xa9, 0x28, 0x8f, 0xb7, 0x18, 0x96, 0x69, 0x15, 0x0d, 0x74, 0x04, 0x75,
+            0x2a, 0x00, 0xc7, 0xa6, 0x6a, 0xbe, 0xac, 0xb3, 0xf2, 0xfb, 0x06, 0x1b, 0x6c, 0x11, 0xbd, 0x96,
+            0xe2, 0x34, 0x74, 0x5d, 0xf5, 0x98, 0x8f, 0x3a, 0x8d, 0x69, 0x08, 0x6f, 0x53, 0x12, 0x4e, 0x39,
+            0x80, 0x90, 0xce, 0x8b, 0x5e, 0x88, 0x23, 0x2d, 0xfd, 0x55, 0xfd, 0x58, 0x3d, 0x39, 0x27, 0xb3,
+            0x7c, 0x57, 0xfe, 0x3b, 0xab, 0x62, 0x26, 0x60, 0xe2, 0xd0, 0xc8, 0xf4, 0x02, 0x23, 0x16, 0xc3,
+            0x52, 0x5d, 0x9f, 0x05, 0x49, 0xa2, 0x71, 0x2d, 0x6d, 0x5b, 0x90, 0xdd, 0xbf, 0xe5, 0xa9, 0x2e,
+            0xf1, 0x85, 0x8a, 0x8a, 0xb8, 0xa9, 0x6b, 0x13, 0xcc, 0x8d, 0x4c, 0x22, 0x41, 0xad, 0x32, 0x1e,
+            0x3b, 0x4b, 0x89, 0x37, 0x66, 0xdf, 0x1e, 0xa5, 0x4a, 0x03, 0x52, 0x1c, 0xd9, 0x19, 0x79, 0x22,
+            0xd4, 0xa7, 0x3b, 0x47, 0x93, 0xa9, 0x0c, 0x03, 0x6a, 0xd8, 0x5f, 0xfc, 0xc0, 0x75, 0x33, 0xe5,
+            0x26, 0xda, 0xf7, 0x4a, 0x77, 0xd8, 0xf1, 0x30, 0x80, 0x39, 0x38, 0x1e, 0x86, 0x1d, 0x97, 0x00,
+            0x9c, 0x0e, 0xba, 0x00, 0x54, 0x8a, 0xc0, 0x12, 0x32, 0x6f, 0x3d, 0xc4, 0x15, 0xf9, 0x50, 0xf8,
+            0xce, 0x95, 0x30, 0x82, 0x04, 0x71, 0x30, 0x82, 0x03, 0x5d, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02,
+            0x05, 0x03, 0x00, 0x00, 0x00, 0x0f, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1d, 0x05,
+            0x00, 0x30, 0x32, 0x31, 0x30, 0x30, 0x13, 0x06, 0x03, 0x55, 0x04, 0x03, 0x1e, 0x0c, 0x00, 0x52,
+            0x00, 0x4f, 0x00, 0x44, 0x00, 0x45, 0x00, 0x4e, 0x00, 0x54, 0x30, 0x19, 0x06, 0x03, 0x55, 0x04,
+            0x07, 0x1e, 0x12, 0x00, 0x57, 0x00, 0x4f, 0x00, 0x52, 0x00, 0x4b, 0x00, 0x47, 0x00, 0x52, 0x00,
+            0x4f, 0x00, 0x55, 0x00, 0x50, 0x30, 0x1e, 0x17, 0x0d, 0x30, 0x37, 0x30, 0x36, 0x32, 0x30, 0x31,
+            0x34, 0x35, 0x31, 0x33, 0x35, 0x5a, 0x17, 0x0d, 0x30, 0x37, 0x30, 0x39, 0x31, 0x38, 0x31, 0x34,
+            0x35, 0x31, 0x33, 0x35, 0x5a, 0x30, 0x7f, 0x31, 0x7d, 0x30, 0x13, 0x06, 0x03, 0x55, 0x04, 0x03,
+            0x1e, 0x0c, 0x00, 0x52, 0x00, 0x4f, 0x00, 0x44, 0x00, 0x45, 0x00, 0x4e, 0x00, 0x54, 0x30, 0x21,
+            0x06, 0x03, 0x55, 0x04, 0x07, 0x1e, 0x1a, 0x00, 0x41, 0x00, 0x64, 0x00, 0x6d, 0x00, 0x69, 0x00,
+            0x6e, 0x00, 0x69, 0x00, 0x73, 0x00, 0x74, 0x00, 0x72, 0x00, 0x61, 0x00, 0x74, 0x00, 0x6f, 0x00,
+            0x72, 0x30, 0x43, 0x06, 0x03, 0x55, 0x04, 0x05, 0x1e, 0x3c, 0x00, 0x31, 0x00, 0x42, 0x00, 0x63,
+            0x00, 0x4b, 0x00, 0x65, 0x00, 0x64, 0x00, 0x79, 0x00, 0x32, 0x00, 0x6b, 0x00, 0x72, 0x00, 0x4f,
+            0x00, 0x34, 0x00, 0x2f, 0x00, 0x4d, 0x00, 0x43, 0x00, 0x44, 0x00, 0x4c, 0x00, 0x49, 0x00, 0x31,
+            0x00, 0x41, 0x00, 0x48, 0x00, 0x5a, 0x00, 0x63, 0x00, 0x50, 0x00, 0x69, 0x00, 0x61, 0x00, 0x73,
+            0x00, 0x3d, 0x00, 0x0d, 0x00, 0x0a, 0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86,
+            0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00, 0x03, 0x82, 0x01, 0x0f, 0x00, 0x30, 0x82,
+            0x01, 0x0a, 0x02, 0x82, 0x01, 0x01, 0x00, 0x88, 0xad, 0x7c, 0x8f, 0x8b, 0x82, 0x76, 0x5a, 0xbd,
+            0x8f, 0x6f, 0x62, 0x18, 0xe1, 0xd9, 0xaa, 0x41, 0xfd, 0xed, 0x68, 0x01, 0xc6, 0x34, 0x35, 0xb0,
+            0x29, 0x04, 0xca, 0x4a, 0x4a, 0x1c, 0x7e, 0x80, 0x14, 0xf7, 0x8e, 0x77, 0xb8, 0x25, 0xff, 0x16,
+            0x47, 0x6f, 0xbd, 0xe2, 0x34, 0x3d, 0x2e, 0x02, 0xb9, 0x53, 0xe4, 0x33, 0x75, 0xad, 0x73, 0x28,
+            0x80, 0xa0, 0x4d, 0xfc, 0x6c, 0xc0, 0x22, 0x53, 0x1b, 0x2c, 0xf8, 0xf5, 0x01, 0x60, 0x19, 0x7e,
+            0x79, 0x19, 0x39, 0x8d, 0xb5, 0xce, 0x39, 0x58, 0xdd, 0x55, 0x24, 0x3b, 0x55, 0x7b, 0x43, 0xc1,
+            0x7f, 0x14, 0x2f, 0xb0, 0x64, 0x3a, 0x54, 0x95, 0x2b, 0x88, 0x49, 0x0c, 0x61, 0x2d, 0xac, 0xf8,
+            0x45, 0xf5, 0xda, 0x88, 0x18, 0x5f, 0xae, 0x42, 0xf8, 0x75, 0xc7, 0x26, 0x6d, 0xb5, 0xbb, 0x39,
+            0x6f, 0xcc, 0x55, 0x1b, 0x32, 0x11, 0x38, 0x8d, 0xe4, 0xe9, 0x44, 0x84, 0x11, 0x36, 0xa2, 0x61,
+            0x76, 0xaa, 0x4c, 0xb4, 0xe3, 0x55, 0x0f, 0xe4, 0x77, 0x8e, 0xde, 0xe3, 0xa9, 0xea, 0xb7, 0x41,
+            0x94, 0x00, 0x58, 0xaa, 0xc9, 0x34, 0xa2, 0x98, 0xc6, 0x01, 0x1a, 0x76, 0x14, 0x01, 0xa8, 0xdc,
+            0x30, 0x7c, 0x77, 0x5a, 0x20, 0x71, 0x5a, 0xa2, 0x3f, 0xaf, 0x13, 0x7e, 0xe8, 0xfd, 0x84, 0xa2,
+            0x5b, 0xcf, 0x25, 0xe9, 0xc7, 0x8f, 0xa8, 0xf2, 0x8b, 0x84, 0xc7, 0x04, 0x5e, 0x53, 0x73, 0x4e,
+            0x0e, 0x89, 0xa3, 0x3c, 0xe7, 0x68, 0x5c, 0x24, 0xb7, 0x80, 0x53, 0x3c, 0x54, 0xc8, 0xc1, 0x53,
+            0xaa, 0x71, 0x71, 0x3d, 0x36, 0x15, 0xd6, 0x6a, 0x9d, 0x7d, 0xde, 0xae, 0xf9, 0xe6, 0xaf, 0x57,
+            0xae, 0xb9, 0x01, 0x96, 0x5d, 0xe0, 0x4d, 0xcd, 0xed, 0xc8, 0xd7, 0xf3, 0x01, 0x03, 0x38, 0x10,
+            0xbe, 0x7c, 0x42, 0x67, 0x01, 0xa7, 0x23, 0x02, 0x03, 0x01, 0x00, 0x01, 0xa3, 0x82, 0x01, 0x47,
+            0x30, 0x82, 0x01, 0x43, 0x30, 0x14, 0x06, 0x09, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x12,
+            0x04, 0x01, 0x01, 0xff, 0x04, 0x04, 0x01, 0x00, 0x05, 0x00, 0x30, 0x3c, 0x06, 0x09, 0x2b, 0x06,
+            0x01, 0x04, 0x01, 0x82, 0x37, 0x12, 0x02, 0x01, 0x01, 0xff, 0x04, 0x2c, 0x4d, 0x00, 0x69, 0x00,
+            0x63, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x73, 0x00, 0x6f, 0x00, 0x66, 0x00, 0x74, 0x00, 0x20, 0x00,
+            0x43, 0x00, 0x6f, 0x00, 0x72, 0x00, 0x70, 0x00, 0x6f, 0x00, 0x72, 0x00, 0x61, 0x00, 0x74, 0x00,
+            0x69, 0x00, 0x6f, 0x00, 0x6e, 0x00, 0x00, 0x00, 0x30, 0x56, 0x06, 0x09, 0x2b, 0x06, 0x01, 0x04,
+            0x01, 0x82, 0x37, 0x12, 0x05, 0x01, 0x01, 0xff, 0x04, 0x46, 0x00, 0x30, 0x00, 0x00, 0x01, 0x00,
+            0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x1c, 0x00, 0x08, 0x00, 0x24, 0x00,
+            0x16, 0x00, 0x3a, 0x00, 0x01, 0x00, 0x41, 0x00, 0x30, 0x00, 0x32, 0x00, 0x00, 0x00, 0x41, 0x00,
+            0x30, 0x00, 0x32, 0x00, 0x2d, 0x00, 0x36, 0x00, 0x2e, 0x00, 0x30, 0x00, 0x30, 0x00, 0x2d, 0x00,
+            0x53, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x80, 0x64, 0x80, 0x00, 0x00, 0x00, 0x00,
+            0x30, 0x6e, 0x06, 0x09, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x12, 0x06, 0x01, 0x01, 0xff,
+            0x04, 0x5e, 0x00, 0x30, 0x00, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x3e, 0x00, 0x52, 0x00, 0x4f, 0x00,
+            0x44, 0x00, 0x45, 0x00, 0x4e, 0x00, 0x54, 0x00, 0x00, 0x00, 0x37, 0x00, 0x38, 0x00, 0x34, 0x00,
+            0x34, 0x00, 0x30, 0x00, 0x2d, 0x00, 0x30, 0x00, 0x30, 0x00, 0x36, 0x00, 0x2d, 0x00, 0x35, 0x00,
+            0x38, 0x00, 0x36, 0x00, 0x37, 0x00, 0x30, 0x00, 0x34, 0x00, 0x35, 0x00, 0x2d, 0x00, 0x37, 0x00,
+            0x30, 0x00, 0x33, 0x00, 0x34, 0x00, 0x37, 0x00, 0x00, 0x00, 0x57, 0x00, 0x4f, 0x00, 0x52, 0x00,
+            0x4b, 0x00, 0x47, 0x00, 0x52, 0x00, 0x4f, 0x00, 0x55, 0x00, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x30, 0x25, 0x06, 0x03, 0x55, 0x1d, 0x23, 0x01, 0x01, 0xff, 0x04, 0x1b, 0x30, 0x19, 0xa1, 0x10,
+            0xa4, 0x0e, 0x52, 0x00, 0x4f, 0x00, 0x44, 0x00, 0x45, 0x00, 0x4e, 0x00, 0x54, 0x00, 0x00, 0x00,
+            0x82, 0x05, 0x03, 0x00, 0x00, 0x00, 0x0f, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1d,
+            0x05, 0x00, 0x03, 0x82, 0x01, 0x01, 0x00, 0x13, 0x1b, 0xdc, 0x89, 0xd2, 0xfc, 0x54, 0x0c, 0xee,
+            0x82, 0x45, 0x68, 0x6a, 0x72, 0xc3, 0x3e, 0x17, 0x73, 0x96, 0x53, 0x44, 0x39, 0x50, 0x0e, 0x0b,
+            0x9f, 0x95, 0xd6, 0x2c, 0x6b, 0x53, 0x14, 0x9c, 0xe5, 0x55, 0xed, 0x65, 0xdf, 0x2a, 0xeb, 0x5c,
+            0x64, 0x85, 0x70, 0x1f, 0xbc, 0x96, 0xcf, 0xa3, 0x76, 0xb1, 0x72, 0x3b, 0xe1, 0xf6, 0xad, 0xad,
+            0xad, 0x2a, 0x14, 0xaf, 0xba, 0xd0, 0xd6, 0xd5, 0x6d, 0x55, 0xec, 0x1e, 0xc3, 0x4b, 0xba, 0x06,
+            0x9c, 0x59, 0x78, 0x93, 0x64, 0x87, 0x4b, 0x03, 0xf9, 0xee, 0x4c, 0xdd, 0x36, 0x5b, 0xbd, 0xd4,
+            0xe5, 0x4c, 0x4e, 0xda, 0x7b, 0xc1, 0xae, 0x23, 0x28, 0x9e, 0x77, 0x6f, 0x0f, 0xe6, 0x94, 0xfe,
+            0x05, 0x22, 0x00, 0xab, 0x63, 0x5b, 0xe1, 0x82, 0x45, 0xa6, 0xec, 0x1f, 0x6f, 0x2c, 0x7b, 0x56,
+            0xde, 0x78, 0x25, 0x7d, 0x10, 0x60, 0x0e, 0x53, 0x42, 0x4b, 0x6c, 0x7a, 0x6b, 0x5d, 0xc9, 0xd5,
+            0xa6, 0xae, 0xc8, 0xc8, 0x52, 0x29, 0xd6, 0x42, 0x56, 0x02, 0xec, 0xf9, 0x23, 0xa8, 0x8c, 0x8d,
+            0x89, 0xc9, 0x7c, 0x84, 0x07, 0xfc, 0x33, 0xe1, 0x1e, 0xea, 0xe2, 0x8f, 0x2b, 0xbe, 0x8f, 0xa9,
+            0xd3, 0xd1, 0xe1, 0x5e, 0x0b, 0xdc, 0xb6, 0x43, 0x6e, 0x33, 0x0a, 0xf4, 0x2e, 0x9d, 0x0c, 0xc9,
+            0x58, 0x54, 0x34, 0xaa, 0xe1, 0xd2, 0xa2, 0xe4, 0x90, 0x02, 0x23, 0x26, 0xa0, 0x92, 0x26, 0x26,
+            0x0a, 0x83, 0xb4, 0x4d, 0xd9, 0x4b, 0xef, 0xeb, 0x9d, 0xa9, 0x24, 0x3f, 0x92, 0x8b, 0xdb, 0x04,
+            0x7b, 0x9d, 0x64, 0x91, 0xa4, 0x4b, 0xd2, 0x6e, 0x51, 0x05, 0x08, 0xc9, 0x91, 0xaf, 0x31, 0x26,
+            0x55, 0x21, 0xb1, 0xea, 0xce, 0xa3, 0xa4, 0x0d, 0x5e, 0x4c, 0x46, 0xdb, 0x16, 0x2d, 0x98, 0xdc,
+            0x60, 0x19, 0xb8, 0x1b, 0xb9, 0xcd, 0xfb, 0x31, 0x00
+        ];
+
+        let license = License::from_decrypted_data(&mut Cursor::new(payload)).unwrap();
+        assert_eq!(6, license.version_major);
+        assert_eq!(0, license.version_minor);
+        assert_eq!(String::from("microsoft.com"), license.scope);
+        assert_eq!(String::from("Microsoft Corporation"), license.company_name);
+        assert_eq!(String::from("A02"), license.product_id);
+        assert_eq!(1945, license.cert_data.len());
+    }
+
+    #[test]
+    fn test_licensed_product_info() {
+        // this payload was extracted from the decrypted certificate at
+        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpele/73c596f1-9550-4649-b880-2947c36c1bb6,
+        // then run through `openssl x509 -noout -text -inform der -in rdplicense.der -certopt ext_dump` to get the
+        // value of the 1.3.6.1.4.1.311.18.5 extension
+        let payload = vec![
+            0x00, 0x30, 0x00, 0x00, // version
+            0x01, 0x00, 0x00, 0x00, // license count
+            0xff, 0x00, 0x00, 0x00, // platform ID
+            0x00, 0x04, 0x00, 0x00, // language ID
+            0x1c, 0x00, 0x08, 0x00, // requested product ID (offset=28, count=8)
+            0x24, 0x00, 0x16, 0x00, // adjusted product ID (offset=36, count=22)
+            0x3a, 0x00, 0x01, 0x00, // version info (offset=58, count=1)
+            0x41, 0x00, 0x30, 0x00, // requested product ID
+            0x32, 0x00, 0x00, 0x00, // requested product ID
+            0x41, 0x00, 0x30, 0x00, //
+            0x32, 0x00, 0x2d, 0x00, //
+            0x36, 0x00, 0x2e, 0x00, // adjusted product ID
+            0x30, 0x00, 0x30, 0x00, //
+            0x2d, 0x00, 0x53, 0x00, //
+            0x00, 0x00, //
+            0x06, 0x00, 0x00, 0x00, // version info (major=6 minor=0)
+            0x00, 0x80, 0x64, 0x80, // version info (flags=0x80648000)
+            0x00, 0x00, 0x00, 0x00,
+        ];
+
+        let info = LicensedProductInfo::from_bytes(&mut Cursor::new(payload)).unwrap();
+        assert_eq!(1, info.count);
+        assert_eq!(0xFF, info.platform_id);
+        assert_eq!(String::from("A02"), info.requested_product_id);
+        assert_eq!(String::from("A02-6.00-S"), info.adjusted_product_id);
+
+        let license_flags = info.flags;
+        assert!(license_flags & ProductLicenseFlags::LicenseEnforced as u32 != 0);
+        assert!(license_flags & ProductLicenseFlags::TemporaryLicense as u32 != 0);
     }
 
     #[test]
@@ -1267,9 +1652,7 @@ mod tests {
             LICENSE_KEY_BUFFER.as_ref(),
         );
 
-        let encrypted = session_encryption
-            .encrypt_message(PREMASTER_SECRET_BUFFER.as_ref())
-            .unwrap();
+        let encrypted = session_encryption.encrypted_premaster_secret().unwrap();
         assert_eq!(encrypted, ENCRYPTED_PREMASTER_SECRET.as_ref());
     }
 }

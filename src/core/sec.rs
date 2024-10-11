@@ -150,8 +150,10 @@ fn rdp_infos(
 /// let mut mcs = mcs::Client(...).unwrap();
 /// sec::connect(&mut mcs).unwrap();
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn connect<T: Read + Write>(
     mcs: &mut mcs::Client<T>,
+    agent_id: &str,
     domain: &String,
     username: &String,
     password: &String,
@@ -174,6 +176,6 @@ pub fn connect<T: Read + Write>(
         ],
     )?;
 
-    license::client_connect(mcs, domain, username)?;
+    license::client_connect(mcs, agent_id, username)?;
     Ok(())
 }
