@@ -920,10 +920,9 @@ impl<T> DynOption<T> {
     ///     assert_eq!(cast!(DataType::Slice, message["Value"]).unwrap().len(), 1);
     /// # }
     /// ```
-    pub fn new<F: 'static>(current: T, filter: F) -> Self
+    pub fn new<F>(current: T, filter: F) -> Self
     where
-        F: Fn(&T) -> MessageOption,
-        F: Send,
+        F: 'static + Fn(&T) -> MessageOption + Send,
     {
         DynOption {
             inner: current,
@@ -1114,10 +1113,9 @@ impl<T: Message> Array<T> {
     ///     assert_eq!(cast!(DataType::U16, dyn_array.as_ref()[1]).unwrap(), 1);
     /// # }
     /// ```
-    pub fn new<F: 'static>(factory: F) -> Self
+    pub fn new<F>(factory: F) -> Self
     where
-        F: Fn() -> T,
-        F: Send,
+        F: 'static + Fn() -> T + Send,
     {
         Array {
             inner: trame![],

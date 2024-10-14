@@ -163,7 +163,7 @@ pub enum Error {
 }
 
 impl From<uuid::Error> for Error {
-    fn from(e: uuid::Error) -> Self {
+    fn from(_e: uuid::Error) -> Self {
         Error::FromError(String::from("agent identifier is not a valid UUID"))
     }
 }

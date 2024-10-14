@@ -7,7 +7,7 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::model::rnd::random;
 use crate::model::unicode;
 use num_enum::TryFromPrimitive;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::ffi::CString;
 use std::io::{self, Cursor, Read, Write};
 
@@ -98,25 +98,6 @@ pub enum StateTransition {
     StNoTransition = 0x00000002,
     StResetPhaseToStart = 0x00000003,
     StResendLastMessage = 0x00000004,
-}
-
-/// ClientLicenseState represents the state machine for a client
-/// performing the licensing negotiation.
-///
-/// See MS-RDPELE section 3.3.1.11.
-enum ClientLicenseState {
-    /// The initial state for a client attempting to obtain a license.
-    Await,
-    /// The client has received a license request from the server.
-    /// In this state, the client sends existing license information
-    /// or a new license request depending on the availability of
-    /// a license as requested by the server.
-    ProcessLicensing,
-    /// The licensing process is aborted if a client sends invalid or
-    /// out-of-sequence messages.
-    Aborted,
-    /// The licensing negotiation is complete.
-    Completed,
 }
 
 #[repr(u16)]
@@ -448,6 +429,8 @@ impl UpgradeLicense {
         })
     }
 
+    // TODO(zmb3): remove this exception
+    #[allow(dead_code)]
     fn decrypted_license(&self, session_encryption_data: &SessionEncryptionData) -> Vec<u8> {
         session_encryption_data.decrypt_message(&self.encrypted_license_data)
     }
@@ -509,6 +492,7 @@ impl PlatformChallenge {
     }
 }
 
+#[allow(dead_code)]
 pub struct ServerLicenseRequest {
     server_random: Vec<u8>,
     certificate: ServerCertificate,
@@ -742,7 +726,7 @@ impl SessionEncryptionData {
     fn salted_hash(input: &[u8], salt: &[u8], salt1: &[u8], salt2: &[u8]) -> Vec<u8> {
         let mut md5 = md5::Md5::new();
         md5.input(
-            &[
+            [
                 salt,
                 digest::digest(
                     &digest::SHA1_FOR_LEGACY_USE_ONLY,
@@ -784,7 +768,7 @@ impl SessionEncryptionData {
     fn generate_mac_data(&self, data: &[u8]) -> Vec<u8> {
         let mut md5 = md5::Md5::new();
         md5.input(
-            &[
+            [
                 &self.mac_salt_key[..],
                 &[0x5c; 48][..], // pad2
                 digest::digest(
@@ -813,6 +797,7 @@ struct ClientLicenseInfo<'a> {
     client_hwid: [u8; 16],
 }
 
+#[allow(dead_code)]
 impl<'a> ClientLicenseInfo<'a> {
     fn new(
         session_encryption_data: &'a SessionEncryptionData,

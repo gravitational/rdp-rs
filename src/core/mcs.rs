@@ -364,9 +364,9 @@ impl<S: Read + Write> Client<S> {
     /// mcs.connect(800, 600, KeyboardLayout::French).unwrap();
     /// mcs.write("global".to_string(), trame![U16::LE(0)])
     /// ```
-    pub fn write<T: 'static>(&mut self, channel_name: &String, message: T) -> RdpResult<()>
+    pub fn write<T>(&mut self, channel_name: &String, message: T) -> RdpResult<()>
     where
-        T: Message,
+        T: 'static + Message,
     {
         self.x224.write(trame![
             mcs_pdu_header(Some(DomainMCSPDU::SendDataRequest), None),
