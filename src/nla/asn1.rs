@@ -65,9 +65,9 @@ impl SequenceOf {
     /// use rdp::nla::asn1::OctetString;
     /// let so = SequenceOf::reader(|| Box::new(OctetString::new()));
     /// ```
-    pub fn reader<F: 'static>(factory: F) -> Self
+    pub fn reader<F>(factory: F) -> Self
     where
-        F: Fn() -> Box<dyn ASN1>,
+        F: 'static + Fn() -> Box<dyn ASN1>,
     {
         SequenceOf {
             inner: Vec::new(),

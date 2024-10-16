@@ -79,9 +79,9 @@ impl<S: Read + Write> Client<S> {
     ///     }
     /// # }
     /// ```
-    pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    pub fn write<T>(&mut self, message: T) -> RdpResult<()>
     where
-        T: Message,
+        T: 'static + Message,
     {
         self.transport
             .write(&trame![tpkt_header(message.length() as u16), message])

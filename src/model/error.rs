@@ -2,6 +2,7 @@ use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use std::fmt;
 use std::io::Error as IoError;
 use std::string::String;
+use uuid;
 use yasna::ASN1Error;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -159,6 +160,12 @@ pub enum Error {
     TryError(String),
     // All kind of parse error
     FromError(String),
+}
+
+impl From<uuid::Error> for Error {
+    fn from(_e: uuid::Error) -> Self {
+        Error::FromError(String::from("agent identifier is not a valid UUID"))
+    }
 }
 
 /// From IO Error

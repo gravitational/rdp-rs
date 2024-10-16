@@ -143,9 +143,9 @@ impl<S: Read + Write> Client<S> {
     /// ).unwrap();
     /// x224.write(trame![U16::LE(0)]).unwrap()
     /// ```
-    pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    pub fn write<T>(&mut self, message: T) -> RdpResult<()>
     where
-        T: Message,
+        T: 'static + Message,
     {
         self.transport.write(trame![x224_header(), message])
     }

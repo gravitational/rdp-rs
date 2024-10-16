@@ -231,11 +231,7 @@ fn message_signature_ex(check_sum: Option<&[u8]>, seq_num: Option<u32>) -> Compo
             vec![0; 8]
         },
         "SeqNum"=> U32::LE(
-            if let Some(seq) = seq_num {
-                seq
-            } else {
-                0
-            }
+            seq_num.unwrap_or_default()
         )
     ]
 }
