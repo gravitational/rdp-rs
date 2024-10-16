@@ -248,6 +248,7 @@ impl Connector {
         if self.restricted_admin_mode {
             sec::connect(
                 &mut mcs,
+                "",
                 &"".to_string(),
                 &"".to_string(),
                 &"".to_string(),
@@ -258,6 +259,7 @@ impl Connector {
         } else {
             sec::connect(
                 &mut mcs,
+                &self.name,
                 &self.domain,
                 &self.username,
                 &self.password,
