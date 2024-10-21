@@ -7,6 +7,7 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::model::rnd::random;
 use crate::model::unicode;
 use num_enum::TryFromPrimitive;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::io::{self, Cursor, Read, Write};
@@ -21,6 +22,8 @@ use ring::digest;
 use rsa::{PublicKeyParts, RsaPublicKey};
 use uuid::Uuid;
 use x509_parser::{certificate::X509Certificate, prelude::FromDer};
+
+use super::LicenseStore;
 
 const SIGNATURE_ALG_RSA: u32 = 0x00000001;
 const KEY_EXCHANGE_ALG_RSA: u32 = 0x00000001;
@@ -151,7 +154,7 @@ impl LicenseMessage {
         if (security_flag & SecurityFlag::SecLicensePkt as u16) == 0 {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
-                &format!("SEC: Invalid Licence packet (flag={security_flag:x})"),
+                &format!("SEC: Invalid license packet (flag={security_flag:x})"),
             )));
         }
 
@@ -436,7 +439,6 @@ impl BinaryBlob {
 type ServerUpgradeLicense = ServerNewLicense;
 
 /// License data that has been obtained from the sever
-#[allow(dead_code)]
 struct License {
     // The version, scope, company name, and product ID fields are used
     // by the client to index the licenses in the client's license store.
@@ -587,7 +589,16 @@ impl ServerLicenseRequest {
         let mut blob_data = cast!(DataType::Slice, server_certificate["blobData"])?;
         let scope_count = cast!(DataType::U32, message["ScopeCount"])?;
 
-        let mut scopes = Vec::with_capacity(scope_count as usize);
+        // enforce a reasonable maximum to prevent unbounded allocations
+        // (in practice we should never get anywhere close to this number)
+        if scope_count > 512 {
+            return Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidData,
+                "too many scopes in server license request",
+            )));
+        }
+
+        let mut scopes = Vec::new();
         for _i in 0..scope_count {
             let mut scope = BinaryBlob::new(BlobType::Scope, vec![]).component();
             scope.read(raw)?;
@@ -1025,17 +1036,15 @@ fn license_response(message_type: MessageType, data: Vec<u8>) -> RdpResult<Vec<u
     Ok(buf)
 }
 
-pub fn client_connect<T: Read + Write>(
+pub fn client_connect<T: Read + Write, L: LicenseStore>(
     mcs: &mut mcs::Client<T>,
     client_machine: &str, // must be a UUID
     username: &str,
+    mut license_store: L,
 ) -> RdpResult<()> {
     // We use the UUID that identifies the client as both the client machine name,
     // and (in binary form) the hardware identifier for the client.
     let client_uuid = Uuid::try_parse(client_machine)?;
-
-    // TODO(zmb3): attempt to load an existing license
-    let existing_license: Option<Vec<u8>> = None;
 
     let (channel, payload) = mcs.read()?;
     let session_encryption_data = match LicenseMessage::new(payload)? {
@@ -1050,6 +1059,21 @@ pub fn client_connect<T: Read + Write>(
                 random(PREMASTER_RANDOM_SIZE),
                 request.certificate,
             );
+
+            let mut existing_license: Option<Vec<u8>> = None;
+            for issuer in request.scopes {
+                let l = license_store.read_license(
+                    request.version_major,
+                    request.version_minor,
+                    &request.company_name,
+                    &issuer,
+                    &request.product_id,
+                );
+                if let Some(license) = l {
+                    existing_license.replace(license);
+                    break;
+                }
+            }
 
             // we either send information about a previously obtained license
             // or a new license request, depending on whether we have a license
@@ -1133,9 +1157,79 @@ pub fn client_connect<T: Read + Write>(
         }
     };
 
-    // TODO(zmb3): save the license
+    license_store.write_license(
+        license.version_major,
+        license.version_minor,
+        &license.company_name,
+        &license.scope,
+        &license.product_id,
+        &license.cert_data,
+    );
 
     Ok(())
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct LicenseStoreKey {
+    major: u16,
+    minor: u16,
+    company: String,
+    issuer: String,
+    product_id: String,
+}
+
+/// MemoryLicenseStore stores licenses in memory.
+#[derive(Default)]
+pub struct MemoryLicenseStore {
+    licenses: HashMap<LicenseStoreKey, Vec<u8>>,
+}
+
+impl MemoryLicenseStore {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+impl LicenseStore for MemoryLicenseStore {
+    fn write_license(
+        &mut self,
+        major: u16,
+        minor: u16,
+        company: &str,
+        issuer: &str,
+        product_id: &str,
+        license: &[u8],
+    ) {
+        self.licenses.insert(
+            LicenseStoreKey {
+                major,
+                minor,
+                company: company.to_owned(),
+                issuer: issuer.to_owned(),
+                product_id: product_id.to_owned(),
+            },
+            license.to_vec(),
+        );
+    }
+
+    fn read_license(
+        &self,
+        major: u16,
+        minor: u16,
+        company: &str,
+        issuer: &str,
+        product_id: &str,
+    ) -> Option<Vec<u8>> {
+        self.licenses
+            .get(&LicenseStoreKey {
+                major,
+                minor,
+                company: company.to_owned(),
+                issuer: issuer.to_owned(),
+                product_id: product_id.to_owned(),
+            })
+            .cloned()
+    }
 }
 
 #[cfg(test)]
