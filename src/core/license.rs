@@ -7,9 +7,12 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::model::rnd::random;
 use crate::model::unicode;
 use num_enum::TryFromPrimitive;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::io::{self, Cursor, Read, Write};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use crate::core::sec::SecurityFlag;
 
@@ -21,6 +24,8 @@ use ring::digest;
 use rsa::{PublicKeyParts, RsaPublicKey};
 use uuid::Uuid;
 use x509_parser::{certificate::X509Certificate, prelude::FromDer};
+
+use super::LicenseStore;
 
 const SIGNATURE_ALG_RSA: u32 = 0x00000001;
 const KEY_EXCHANGE_ALG_RSA: u32 = 0x00000001;
@@ -1029,13 +1034,11 @@ pub fn client_connect<T: Read + Write>(
     mcs: &mut mcs::Client<T>,
     client_machine: &str, // must be a UUID
     username: &str,
+    license_store: &mut dyn LicenseStore,
 ) -> RdpResult<()> {
     // We use the UUID that identifies the client as both the client machine name,
     // and (in binary form) the hardware identifier for the client.
     let client_uuid = Uuid::try_parse(client_machine)?;
-
-    // TODO(zmb3): attempt to load an existing license
-    let existing_license: Option<Vec<u8>> = None;
 
     let (channel, payload) = mcs.read()?;
     let session_encryption_data = match LicenseMessage::new(payload)? {
@@ -1051,10 +1054,26 @@ pub fn client_connect<T: Read + Write>(
                 request.certificate,
             );
 
+            let mut existing_license: Option<Vec<u8>> = None;
+            for issuer in request.scopes {
+                let l = license_store.read_license(
+                    request.version_major,
+                    request.version_minor,
+                    &request.company_name,
+                    &issuer,
+                    &request.product_id,
+                );
+                if l.is_some() {
+                    existing_license.replace(l.unwrap());
+                    break;
+                }
+            }
+
             // we either send information about a previously obtained license
             // or a new license request, depending on whether we have a license
             // cached from a previous attempt
             if let Some(license) = existing_license {
+                println!("!! [LIC] using existing license");
                 let license_info = ClientLicenseInfo::new(
                     &session_encryption_data,
                     &license,
@@ -1065,6 +1084,7 @@ pub fn client_connect<T: Read + Write>(
                     license_response(MessageType::LicenseInfo, license_info.to_bytes()?)?,
                 )?
             } else {
+                println!("!! [LIC] requesting new license");
                 let client_new_license_response = ClientNewLicense::new(
                     &session_encryption_data,
                     CString::new(username).unwrap_or_else(|_| CString::new("default").unwrap()),
@@ -1133,9 +1153,81 @@ pub fn client_connect<T: Read + Write>(
         }
     };
 
-    // TODO(zmb3): save the license
+    license_store.write_license(
+        license.version_major,
+        license.version_minor,
+        &license.company_name,
+        &license.scope,
+        &license.product_id,
+        &license.cert_data,
+    );
 
     Ok(())
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct LicenseStoreKey {
+    major: u16,
+    minor: u16,
+    company: String,
+    issuer: String,
+    product_id: String,
+}
+
+pub struct MemoryLicenseStore {
+    licenses: Arc<Mutex<HashMap<LicenseStoreKey, Vec<u8>>>>,
+}
+
+impl MemoryLicenseStore {
+    pub fn new() -> Self {
+        Self {
+            licenses: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+impl LicenseStore for MemoryLicenseStore {
+    fn write_license(
+        &mut self,
+        major: u16,
+        minor: u16,
+        company: &str,
+        issuer: &str,
+        product_id: &str,
+        license: &[u8],
+    ) {
+        self.licenses.lock().unwrap().insert(
+            LicenseStoreKey {
+                major,
+                minor,
+                company: company.to_owned(),
+                issuer: issuer.to_owned(),
+                product_id: product_id.to_owned(),
+            },
+            license.to_vec(),
+        );
+    }
+
+    fn read_license(
+        &self,
+        major: u16,
+        minor: u16,
+        company: &str,
+        issuer: &str,
+        product_id: &str,
+    ) -> Option<Vec<u8>> {
+        self.licenses
+            .lock()
+            .unwrap()
+            .get(&LicenseStoreKey {
+                major,
+                minor,
+                company: company.to_owned(),
+                issuer: issuer.to_owned(),
+                product_id: product_id.to_owned(),
+            })
+            .cloned()
+    }
 }
 
 #[cfg(test)]

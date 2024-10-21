@@ -5,6 +5,8 @@ use crate::model::error::RdpResult;
 use crate::model::unicode::Unicode;
 use std::io::{Read, Write};
 
+use super::LicenseStore;
+
 /// Security flag send as header flage in core ptotocol
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
 #[repr(u16)]
@@ -160,6 +162,7 @@ pub fn connect<T: Read + Write>(
     auto_logon: bool,
     info_flags: Option<u32>,
     extended_info_flags: Option<u32>,
+    license_store: &mut dyn LicenseStore,
 ) -> RdpResult<()> {
     let perf_flags = if mcs.is_rdp_version_5_plus() {
         extended_info_flags
@@ -176,6 +179,6 @@ pub fn connect<T: Read + Write>(
         ],
     )?;
 
-    license::client_connect(mcs, agent_id, username)?;
+    license::client_connect(mcs, agent_id, username, license_store)?;
     Ok(())
 }
