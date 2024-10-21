@@ -10,6 +10,9 @@ use crate::model::link::{Link, Stream};
 use crate::nla::ntlm::Ntlm;
 use std::io::{Read, Write};
 
+use super::license::MemoryLicenseStore;
+use super::LicenseStore;
+
 impl From<&str> for KeyboardLayout {
     fn from(e: &str) -> Self {
         match e {
@@ -164,6 +167,8 @@ pub struct Connector {
     /// Use network level authentication
     /// default TRUE
     use_nla: bool,
+    /// Stores RDS licenses for reuse.
+    license_store: Box<dyn LicenseStore>,
 }
 
 impl Connector {
@@ -193,6 +198,7 @@ impl Connector {
             check_certificate: false,
             name: "rdp-rs".to_string(),
             use_nla: true,
+            license_store: Box::new(MemoryLicenseStore::new()),
         }
     }
 
@@ -248,22 +254,26 @@ impl Connector {
         if self.restricted_admin_mode {
             sec::connect(
                 &mut mcs,
+                "",
                 &"".to_string(),
                 &"".to_string(),
                 &"".to_string(),
                 self.auto_logon,
                 None,
                 None,
+                &mut *self.license_store,
             )?;
         } else {
             sec::connect(
                 &mut mcs,
+                &self.name,
                 &self.domain,
                 &self.username,
                 &self.password,
                 self.auto_logon,
                 None,
                 None,
+                &mut *self.license_store,
             )?;
         }
 
@@ -342,6 +352,12 @@ impl Connector {
     /// Enable or disable Network Level Authentication
     pub fn use_nla(mut self, use_nla: bool) -> Self {
         self.use_nla = use_nla;
+        self
+    }
+
+    /// Use a custom license store implementation
+    pub fn use_license_store(mut self, license_store: Box<dyn LicenseStore>) -> Self {
+        self.license_store = license_store;
         self
     }
 }
