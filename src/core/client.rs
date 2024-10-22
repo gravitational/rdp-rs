@@ -62,7 +62,7 @@ impl<S: Read + Write> RdpClient<S> {
             "global" => self.global.read(message, &mut self.mcs, callback),
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::UnexpectedType,
-                &format!("Invalid channel name {:?}", channel_name),
+                &format!("Invalid channel name {channel_name:?}"),
             ))),
         }
     }

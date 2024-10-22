@@ -102,7 +102,7 @@ impl Capability {
             _ => {
                 return Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::Unknown,
-                    &format!("CAPABILITY: Unknown capability {:?}", cap_type),
+                    &format!("CAPABILITY: Unknown capability {cap_type:?}"),
                 )))
             }
         };

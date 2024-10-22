@@ -347,7 +347,7 @@ impl<S: Read + Write> Client<S> {
                 *channel_id,
                 &mut try_let!(tpkt::Payload::Raw, self.x224.read()?)?,
             )? {
-                println!("Server reject channel id {:?}", channel_id);
+                println!("Server reject channel id {channel_id:?}");
             }
         }
 

@@ -181,7 +181,7 @@ impl LicenseMessage {
             MessageType::ErrorAlert => Ok(Self::ErrorAlert(ErrorAlert::from_bytes(&mut msg_data)?)),
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::NotImplemented,
-                &format!("Licensing nego not implemented. bMsgtype: {:?}", msg_type),
+                &format!("Licensing nego not implemented. bMsgtype: {msg_type:?}"),
             ))),
         }
     }
@@ -231,8 +231,7 @@ impl ServerCertificate {
                     return Err(Error::RdpError(RdpError::new(
                         RdpErrorKind::NotImplemented,
                         &format!(
-                            "unsupported signature or key algorithm, dwSigAlgId={} dwKeyAlgId={}",
-                            sig_alg_id, key_alg_id
+                            "unsupported signature or key algorithm, dwSigAlgId={sig_alg_id} dwKeyAlgId={key_alg_id}"
                         ),
                     )));
                 }
@@ -251,7 +250,7 @@ impl ServerCertificate {
                 if num_cert_blobs < 2 {
                     return Err(Error::RdpError(RdpError::new(
                         RdpErrorKind::InvalidData,
-                        &format!("invalid number of certificates in the chain. expected minimum 2, found: {}", num_cert_blobs),
+                        &format!("invalid number of certificates in the chain. expected minimum 2, found: {num_cert_blobs}"),
                     )));
                 }
                 let mut certificates: Vec<Vec<u8>> = Vec::with_capacity(num_cert_blobs as usize);

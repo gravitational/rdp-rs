@@ -102,7 +102,7 @@ impl fmt::Display for ProtocolNegFailureCode {
                     "the server requires that the client support enhanced RDP security with TLS and certificate-based client authentication"
                         .into(),
                 ProtocolNegFailureCode::Unknown(code) =>
-                    format!("unknown negotiation failure {}", code),
+                    format!("unknown negotiation failure {code}"),
             }
         )
     }

@@ -330,7 +330,7 @@ pub fn channel_def(name: &str, options: u32) -> Component {
         name = &name[..8];
     }
     component![
-        "name"=> format!("{:\x00<8}",name).into_bytes(),
+        "name"=> format!("{name:\x00<8}").into_bytes(),
         "options" => U32::LE(options)
     ]
 }

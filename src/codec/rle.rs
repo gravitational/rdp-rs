@@ -524,17 +524,17 @@ mod tests {
 
             let (width, height) = (64u32, 64u32);
 
-            let input = std::fs::read(&name).unwrap_or_else(|_| panic!("reading in {:?}", name));
+            let input = std::fs::read(&name).unwrap_or_else(|_| panic!("reading in {name:?}"));
 
             assert!(name.set_extension("out"));
-            let mut out = std::fs::read(&name).unwrap_or_else(|_| panic!("reading out {:?}", name));
+            let mut out = std::fs::read(&name).unwrap_or_else(|_| panic!("reading out {name:?}"));
             set_plane(0xFF, width, height, &mut out[3..]); // set alpha plane to opaque
 
             let mut result = vec![0_u8; width as usize * height as usize * 4];
             rle_32_decompress(&input, width, height, &mut result).unwrap();
 
             assert_eq!(out.len(), result.len());
-            assert_eq!(out, result, "for file {:?}", name);
+            assert_eq!(out, result, "for file {name:?}");
         }
     }
 }

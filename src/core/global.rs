@@ -362,7 +362,7 @@ impl DataPDU {
             _ => {
                 return Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::NotImplemented,
-                    &format!("GLOBAL: Data PDU parsing not implemented {:?}", pdu_type),
+                    &format!("GLOBAL: Data PDU parsing not implemented {pdu_type:?}"),
                 )))
             }
         };
@@ -685,8 +685,7 @@ impl FastPathUpdate {
                 return Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::NotImplemented,
                     &format!(
-                        "GLOBAL: Fast Path parsing not implemented {:?}",
-                        fp_update_type
+                        "GLOBAL: Fast Path parsing not implemented {fp_update_type:?}"
                     ),
                 )))
             }
@@ -996,7 +995,7 @@ impl Client {
                     }
                     _ => println!("GLOBAL: Data PDU not handle {:?}", data_pdu.pdu_type),
                 },
-                Err(e) => println!("GLOBAL: Parsing data PDU error {:?}", e),
+                Err(e) => println!("GLOBAL: Parsing data PDU error {e:?}"),
             };
         }
         Ok(())
@@ -1044,7 +1043,7 @@ impl Client {
                         _ => println!("GLOBAL: Fast Path order not handled {:?}", order.fp_type),
                     }
                 }
-                Err(e) => println!("GLOBAL: Unknown Fast Path order {:?}", e),
+                Err(e) => println!("GLOBAL: Unknown Fast Path order {e:?}"),
             };
         }
 
