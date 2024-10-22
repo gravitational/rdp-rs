@@ -684,9 +684,7 @@ impl FastPathUpdate {
             _ => {
                 return Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::NotImplemented,
-                    &format!(
-                        "GLOBAL: Fast Path parsing not implemented {fp_update_type:?}"
-                    ),
+                    &format!("GLOBAL: Fast Path parsing not implemented {fp_update_type:?}"),
                 )))
             }
         };
