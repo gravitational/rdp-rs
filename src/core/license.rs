@@ -353,20 +353,6 @@ impl ServerNewLicense {
             mac_data,
         })
     }
-
-    #[expect(dead_code)]
-    fn decrypted_license(
-        &self,
-        session_encryption_data: &SessionEncryptionData,
-    ) -> RdpResult<License> {
-        License::new(
-            session_encryption_data,
-            &ServerNewLicense {
-                mac_data: self.mac_data.clone(),
-                encrypted_license_data: self.encrypted_license_data.clone(),
-            },
-        )
-    }
 }
 
 pub struct ErrorAlert {
