@@ -10,6 +10,9 @@ use crate::model::link::{Link, Stream};
 use crate::nla::ntlm::Ntlm;
 use std::io::{Read, Write};
 
+use super::license::MemoryLicenseStore;
+use super::LicenseStore;
+
 impl From<&str> for KeyboardLayout {
     fn from(e: &str) -> Self {
         match e {
@@ -133,7 +136,10 @@ impl<S: Read + Write> RdpClient<S> {
     }
 }
 
-pub struct Connector {
+pub struct Connector<L = MemoryLicenseStore>
+where
+    L: LicenseStore,
+{
     /// Screen width
     width: u16,
     /// Screen height
@@ -164,9 +170,11 @@ pub struct Connector {
     /// Use network level authentication
     /// default TRUE
     use_nla: bool,
+    /// Stores RDS licenses for reuse.
+    license_store: L,
 }
 
-impl Connector {
+impl<L: LicenseStore> Connector<L> {
     /// Create a new RDP client
     /// You can configure your client
     ///
@@ -178,7 +186,7 @@ impl Connector {
     ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
     /// ```
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new_with_license_store(license_store: L) -> Self {
         Connector {
             width: 800,
             height: 600,
@@ -193,9 +201,29 @@ impl Connector {
             check_certificate: false,
             name: "rdp-rs".to_string(),
             use_nla: true,
+            license_store,
         }
     }
+}
 
+impl<L: LicenseStore + Default> Default for Connector<L> {
+    fn default() -> Self {
+        Self::new_with_license_store(Default::default())
+    }
+}
+
+impl Connector<Box<dyn LicenseStore>> {
+    pub fn new() -> Self {
+        Self::new_with_license_store(Box::new(MemoryLicenseStore::new()))
+    }
+
+    pub fn use_license_store(mut self, license_store: Box<dyn LicenseStore>) -> Self {
+        self.license_store = license_store;
+        self
+    }
+}
+
+impl<L: LicenseStore> Connector<L> {
     /// Connect to a target server
     /// This function will produce a RdpClient object
     /// use to interact with server
@@ -248,22 +276,26 @@ impl Connector {
         if self.restricted_admin_mode {
             sec::connect(
                 &mut mcs,
+                "",
                 &"".to_string(),
                 &"".to_string(),
                 &"".to_string(),
                 self.auto_logon,
                 None,
                 None,
+                &mut self.license_store,
             )?;
         } else {
             sec::connect(
                 &mut mcs,
+                &self.name,
                 &self.domain,
                 &self.username,
                 &self.password,
                 self.auto_logon,
                 None,
                 None,
+                &mut self.license_store,
             )?;
         }
 

@@ -5,6 +5,8 @@ use crate::model::error::RdpResult;
 use crate::model::unicode::Unicode;
 use std::io::{Read, Write};
 
+use super::LicenseStore;
+
 /// Security flag send as header flage in core ptotocol
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
 #[repr(u16)]
@@ -150,14 +152,17 @@ fn rdp_infos(
 /// let mut mcs = mcs::Client(...).unwrap();
 /// sec::connect(&mut mcs).unwrap();
 /// ```
-pub fn connect<T: Read + Write>(
+#[allow(clippy::too_many_arguments)]
+pub fn connect<T: Read + Write, L: LicenseStore>(
     mcs: &mut mcs::Client<T>,
+    agent_id: &str,
     domain: &String,
     username: &String,
     password: &String,
     auto_logon: bool,
     info_flags: Option<u32>,
     extended_info_flags: Option<u32>,
+    license_store: L,
 ) -> RdpResult<()> {
     let perf_flags = if mcs.is_rdp_version_5_plus() {
         extended_info_flags
@@ -174,6 +179,6 @@ pub fn connect<T: Read + Write>(
         ],
     )?;
 
-    license::client_connect(mcs, domain, username)?;
+    license::client_connect(mcs, agent_id, username, license_store)?;
     Ok(())
 }
